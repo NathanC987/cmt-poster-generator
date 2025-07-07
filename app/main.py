@@ -1,4 +1,5 @@
 import time
+import json
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -54,6 +55,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests for debugging"""
+    start_time = time.time()
+    
+    # Capture request body for POST requests
+    if request.method == "POST":
+        body = await request.body()
+        if body:
+            try:
+                json_body = json.loads(body.decode())
+                print(f"\n=== INCOMING POST REQUEST ===")
+                print(f"URL: {request.url}")
+                print(f"Headers: {dict(request.headers)}")
+                print(f"JSON Payload: {json.dumps(json_body, indent=2)}")
+                print(f"=== END REQUEST ===\n")
+            except:
+                print(f"POST to {request.url} with non-JSON body: {body[:200]}...")
+        
+        # Recreate request with body for downstream processing
+        request._body = body
+    
+    response = await call_next(request)
+    
+    process_time = time.time() - start_time
+    print(f"Request to {request.url.path} took {process_time:.4f} seconds")
+    
+    return response
 
 # Rate limiting dependency
 async def check_rate_limit(request: Request):
@@ -247,6 +278,31 @@ async def process_text(request: TextProcessingRequest):
             processed_length=0,
             processing_time=processing_time
         )
+
+@app.post("/debug-payload")
+async def debug_payload(request: Request):
+    """Debug endpoint to capture and return any JSON payload"""
+    try:
+        body = await request.body()
+        json_data = json.loads(body.decode())
+        
+        print(f"\n=== DEBUG ENDPOINT CALLED ===")
+        print(f"Timestamp: {datetime.now()}")
+        print(f"JSON Payload: {json.dumps(json_data, indent=2)}")
+        print(f"=== END DEBUG ===\n")
+        
+        return {
+            "status": "received",
+            "timestamp": datetime.now().isoformat(),
+            "payload": json_data,
+            "message": "Payload logged successfully - check server logs"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to parse JSON payload"
+        }
 
 @app.get("/services/status")
 async def get_service_status():
