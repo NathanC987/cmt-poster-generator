@@ -123,11 +123,12 @@ async def global_exception_handler(request: Request, exc: Exception):
     """Global exception handler"""
     return JSONResponse(
         status_code=500,
-        content=ErrorResponse(
-            error_code="INTERNAL_ERROR",
-            message=str(exc),
-            timestamp=datetime.now()
-        ).dict()
+        content={
+            "success": False,
+            "error_code": "INTERNAL_ERROR",
+            "message": str(exc),
+            "timestamp": datetime.now().isoformat()
+        }
     )
 
 @app.get("/")
@@ -154,28 +155,32 @@ async def root():
         }
     }
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health")
 async def health_check():
     """Health check endpoint with service status"""
     current_time = datetime.now()
     uptime = time.time() - start_time
     
     # Get status of all services
-    dependencies = await get_services_status()
+    try:
+        dependencies = await get_services_status()
+    except Exception as e:
+        dependencies = {"error": str(e)}
     
     # Determine overall health
     all_healthy = all(
         dep.get("status") == "healthy" 
         for dep in dependencies.values()
+        if isinstance(dep, dict)
     )
     
-    return HealthResponse(
-        status="healthy" if all_healthy else "degraded",
-        timestamp=current_time,
-        version=settings.API_VERSION,
-        uptime=uptime,
-        dependencies=dependencies
-    )
+    return {
+        "status": "healthy" if all_healthy else "degraded",
+        "timestamp": current_time.isoformat(),
+        "version": settings.API_VERSION,
+        "uptime": uptime,
+        "dependencies": dependencies
+    }
 
 @app.post("/generate-posters", response_model=PosterGenerationResponse, dependencies=[Depends(check_rate_limit)])
 async def generate_posters(request: PosterGenerationRequest):
