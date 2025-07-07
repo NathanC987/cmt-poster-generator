@@ -133,15 +133,24 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
+    global last_payload
+    
     return {
         "message": "CMT Poster Generator API",
         "version": settings.API_VERSION,
         "docs": "/docs",
         "health": "/health",
+        "debug": {
+            "last_payload_status": "payload_found" if last_payload["data"] is not None else "no_payload",
+            "last_payload_timestamp": last_payload.get("timestamp"),
+            "last_payload_url": last_payload.get("url"),
+            "view_full_payload": "Visit /last-payload endpoint"
+        },
         "endpoints": {
             "generate_posters": "/generate-posters",
             "landmarks": "/landmarks",
-            "process_text": "/process-text"
+            "process_text": "/process-text",
+            "last_payload": "/last-payload"
         }
     }
 
