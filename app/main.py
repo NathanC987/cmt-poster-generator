@@ -21,6 +21,9 @@ from app.services.poster_composer import PosterComposer
 # Global variables for uptime tracking
 start_time = time.time()
 
+# Store last received payload for debugging
+last_payload = {"timestamp": None, "data": None, "url": None}
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
@@ -60,7 +63,8 @@ app.add_middleware(
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming requests for debugging"""
-    start_time = time.time()
+    global last_payload
+    start_time_req = time.time()
     
     # Capture request body for POST requests
     if request.method == "POST":
@@ -68,6 +72,15 @@ async def log_requests(request: Request, call_next):
         if body:
             try:
                 json_body = json.loads(body.decode())
+                
+                # Store payload globally for easy access
+                last_payload = {
+                    "timestamp": datetime.now().isoformat(),
+                    "url": str(request.url),
+                    "data": json_body,
+                    "headers": dict(request.headers)
+                }
+                
                 print(f"\n=== INCOMING POST REQUEST ===")
                 print(f"URL: {request.url}")
                 print(f"Headers: {dict(request.headers)}")
@@ -81,7 +94,7 @@ async def log_requests(request: Request, call_next):
     
     response = await call_next(request)
     
-    process_time = time.time() - start_time
+    process_time = time.time() - start_time_req
     print(f"Request to {request.url.path} took {process_time:.4f} seconds")
     
     return response
@@ -303,6 +316,24 @@ async def debug_payload(request: Request):
             "error": str(e),
             "message": "Failed to parse JSON payload"
         }
+
+@app.get("/last-payload")
+async def get_last_payload():
+    """Get the last received POST payload for debugging"""
+    global last_payload
+    
+    if last_payload["data"] is None:
+        return {
+            "status": "no_payload",
+            "message": "No POST requests received yet",
+            "note": "Make a POST request to any endpoint and check back here"
+        }
+    
+    return {
+        "status": "payload_found",
+        "last_request": last_payload,
+        "message": "This is the exact JSON that was last posted to your API"
+    }
 
 @app.get("/services/status")
 async def get_service_status():
