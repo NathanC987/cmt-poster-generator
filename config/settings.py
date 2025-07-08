@@ -41,9 +41,8 @@ class Settings(BaseSettings):
     POSTER_FORMAT: str = "PNG"
     POSTER_QUALITY: int = 95
     
-    # Caching
-    CACHE_EXPIRY_HOURS: int = 24
-    LANDMARK_CACHE_EXPIRY_DAYS: int = 30
+    # Font Configuration
+    POSTER_FONT_FAMILY: str = "Glacial Indifference"
     
     # Rate Limiting Settings
     RATE_LIMIT_REQUESTS: int = 100

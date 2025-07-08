@@ -236,15 +236,11 @@ class PosterComposer:
         """Add speaker focus to poster"""
         draw = ImageDraw.Draw(poster)
         
-        # Load fonts
-        try:
-            name_font = ImageFont.truetype("fonts/OpenSans-Bold.ttf", 36)
-            title_font = ImageFont.truetype("fonts/OpenSans-Regular.ttf", 28)
-            bio_font = ImageFont.truetype("fonts/OpenSans-Regular.ttf", 24)
-        except:
-            name_font = ImageFont.load_default()
-            title_font = ImageFont.load_default()
-            bio_font = ImageFont.load_default()
+        # Load fonts using font service
+        font_service = await get_font_service()
+        name_font = font_service.get_title_font(36)
+        title_font = font_service.get_subtitle_font(28)
+        bio_font = font_service.get_body_font(24)
         
         # Speaker photo (large, centered)
         center_x = self.poster_width // 2
@@ -296,13 +292,10 @@ class PosterComposer:
         
         draw = ImageDraw.Draw(poster)
         
-        # Load fonts
-        try:
-            theme_font = ImageFont.truetype("fonts/OpenSans-Bold.ttf", 64)
-            desc_font = ImageFont.truetype("fonts/OpenSans-Regular.ttf", 28)
-        except:
-            theme_font = ImageFont.load_default()
-            desc_font = ImageFont.load_default()
+        # Load fonts using font service
+        font_service = await get_font_service()
+        theme_font = font_service.get_title_font(64)
+        desc_font = font_service.get_subtitle_font(28)
         
         # Center the theme
         center_x = self.poster_width // 2
@@ -331,11 +324,9 @@ class PosterComposer:
         """Add call-to-action to poster"""
         draw = ImageDraw.Draw(poster)
         
-        # Load font
-        try:
-            cta_font = ImageFont.truetype("fonts/OpenSans-Bold.ttf", 32)
-        except:
-            cta_font = ImageFont.load_default()
+        # Load font using font service
+        font_service = await get_font_service()
+        cta_font = font_service.get_title_font(32)
         
         # CTA text
         cta_text = "Register Now!"

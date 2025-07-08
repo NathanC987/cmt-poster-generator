@@ -28,31 +28,36 @@ class FontService(BaseService):
             "C:/Windows/Fonts/",
         ]
         
-        # Font files to look for
+        # Font files to look for (prioritizing Glacial Indifference)
         font_candidates = {
             "title": [
+                "GlacialIndifference-Bold.ttf",
+                "GlacialIndifference-Bold.otf",
+                "glacial-indifference-bold.ttf",
                 "DejaVuSans-Bold.ttf",
                 "LiberationSans-Bold.ttf", 
                 "Arial-Bold.ttf",
-                "ArialBold.ttf",
-                "Helvetica-Bold.ttf",
-                "OpenSans-Bold.ttf"
+                "ArialBold.ttf"
             ],
             "subtitle": [
+                "GlacialIndifference-Regular.ttf",
+                "GlacialIndifference-Regular.otf",
+                "glacial-indifference-regular.ttf",
+                "GlacialIndifference.ttf",
+                "glacial-indifference.ttf",
                 "DejaVuSans.ttf",
                 "LiberationSans-Regular.ttf",
-                "Arial.ttf", 
-                "ArialRegular.ttf",
-                "Helvetica.ttf",
-                "OpenSans-Regular.ttf"
+                "Arial.ttf"
             ],
             "body": [
+                "GlacialIndifference-Regular.ttf",
+                "GlacialIndifference-Regular.otf",
+                "glacial-indifference-regular.ttf",
+                "GlacialIndifference.ttf",
+                "glacial-indifference.ttf",
                 "DejaVuSans.ttf",
                 "LiberationSans-Regular.ttf",
-                "Arial.ttf",
-                "ArialRegular.ttf", 
-                "Helvetica.ttf",
-                "OpenSans-Regular.ttf"
+                "Arial.ttf"
             ]
         }
         
