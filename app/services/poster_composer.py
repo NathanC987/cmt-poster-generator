@@ -5,6 +5,8 @@ from PIL import Image, ImageDraw, ImageFont
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime
 from app.services.service_factory import get_storage, get_image_generator, get_text_processor
+from app.services.font_service import get_font_service
+from app.services.wordpress_service import WordPressService
 from app.models.request_models import PosterGenerationRequest, SpeakerInfo, EventDetails
 
 class PosterComposer:
@@ -158,15 +160,11 @@ class PosterComposer:
         """Add event information to poster"""
         draw = ImageDraw.Draw(poster)
         
-        # Load fonts (fallback to default if not available)
-        try:
-            title_font = ImageFont.truetype("fonts/OpenSans-Bold.ttf", 48)
-            subtitle_font = ImageFont.truetype("fonts/OpenSans-Regular.ttf", 28)
-            body_font = ImageFont.truetype("fonts/OpenSans-Regular.ttf", 24)
-        except:
-            title_font = ImageFont.load_default()
-            subtitle_font = ImageFont.load_default()
-            body_font = ImageFont.load_default()
+        # Load fonts using font service
+        font_service = await get_font_service()
+        title_font = font_service.get_title_font(48)
+        subtitle_font = font_service.get_subtitle_font(28)
+        body_font = font_service.get_body_font(24)
         
         # Position calculations
         margin = 60
@@ -378,28 +376,32 @@ class PosterComposer:
         """Add individual speaker cell to poster"""
         draw = ImageDraw.Draw(poster)
         
-        # Load fonts
-        try:
-            name_font = ImageFont.truetype("fonts/OpenSans-Bold.ttf", 20)
-            title_font = ImageFont.truetype("fonts/OpenSans-Regular.ttf", 16)
-        except:
-            name_font = ImageFont.load_default()
-            title_font = ImageFont.load_default()
+        # Load fonts using font service
+        font_service = await get_font_service()
+        name_font = font_service.get_font("title", 20)
+        title_font = font_service.get_font("subtitle", 16)
         
         # Speaker photo
         photo_size = 60
         photo_x = x + width // 2 - photo_size // 2
         photo_y = y + 10
         
-        if speaker.photo_url:
+        # Try to get speaker photo from multiple sources
+        photo_url = await self._get_speaker_photo(speaker)
+        
+        if photo_url:
             try:
-                photo = await self._download_image(speaker.photo_url)
+                photo = await self._download_image(photo_url)
                 photo = self._resize_to_circle(photo, photo_size)
                 poster.paste(photo, (photo_x, photo_y), photo)
             except:
                 # Draw placeholder circle
                 draw.ellipse([photo_x, photo_y, photo_x + photo_size, photo_y + photo_size], 
                            fill=self.colors["secondary"])
+        else:
+            # Draw placeholder circle
+            draw.ellipse([photo_x, photo_y, photo_x + photo_size, photo_y + photo_size], 
+                       fill=self.colors["secondary"])
         
         # Speaker name
         name_lines = self._wrap_text(speaker.name, name_font, width - 10)
@@ -418,6 +420,31 @@ class PosterComposer:
                 line_width = line_bbox[2] - line_bbox[0]
                 draw.text((x + width // 2 - line_width // 2, text_y), line, fill="white", font=title_font)
                 break
+    
+    async def _get_speaker_photo(self, speaker: SpeakerInfo) -> Optional[str]:
+        """Get speaker photo from multiple sources"""
+        # First priority: provided photo URL
+        if speaker.photo_url:
+            return speaker.photo_url
+        
+        # Second priority: try WordPress lookup
+        try:
+            wordpress_service = WordPressService()
+            await wordpress_service.initialize()
+            
+            photo_url = await wordpress_service.get_speaker_photo(
+                speaker.name, 
+                speaker.linkedin_url
+            )
+            
+            if photo_url:
+                return photo_url
+                
+        except Exception as e:
+            print(f"WordPress photo lookup failed for {speaker.name}: {e}")
+        
+        # No photo found
+        return None
     
     async def _get_landmark_image(self, city: str, country: str) -> str:
         """Get landmark image (from cache or generate new)"""

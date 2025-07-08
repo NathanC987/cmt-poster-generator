@@ -7,6 +7,8 @@ from app.services.replicate_service import ReplicateImageGenerator
 from app.services.azure_openai_service import AzureOpenAITextProcessor
 from app.services.upstash_service import UpstashRateLimiter, MemoryRateLimiter
 from app.services.cloudflare_r2_service import CloudflareR2Storage, LocalStorage
+from app.services.wordpress_service import WordPressService
+from app.services.font_service import get_font_service
 
 class ServiceFactory:
     """Factory class to create service instances based on configuration"""

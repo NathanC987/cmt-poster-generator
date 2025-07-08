@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     R2_SECRET_ACCESS_KEY: Optional[str] = None
     R2_ENDPOINT: Optional[str] = None
     
-    # WordPress Integration
+    # WordPress Integration (for speaker photos)
     WORDPRESS_URL: Optional[str] = None
     WORDPRESS_USERNAME: Optional[str] = None
     WORDPRESS_PASSWORD: Optional[str] = None
