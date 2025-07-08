@@ -1,5 +1,6 @@
 import httpx
 import base64
+import asyncio
 from typing import Optional, Dict, Any
 from config.settings import settings
 from app.services.base_service import BaseService
@@ -12,6 +13,8 @@ class WordPressService(BaseService):
         self.client = None
         self.base_url = None
         self.auth_header = None
+        self.session_cookies = None
+        self.is_authenticated = False
     
     async def _initialize(self):
         """Initialize WordPress client"""
@@ -20,21 +23,91 @@ class WordPressService(BaseService):
         
         self.base_url = settings.WORDPRESS_URL.rstrip('/')
         
-        # Setup authentication if credentials provided
-        if settings.WORDPRESS_USERNAME and settings.WORDPRESS_PASSWORD:
-            credentials = f"{settings.WORDPRESS_USERNAME}:{settings.WORDPRESS_PASSWORD}"
-            encoded_credentials = base64.b64encode(credentials.encode()).decode()
-            self.auth_header = f"Basic {encoded_credentials}"
-        
-        # Create HTTP client
-        headers = {"Content-Type": "application/json"}
-        if self.auth_header:
-            headers["Authorization"] = self.auth_header
-            
+        # Create HTTP client with persistent cookies
         self.client = httpx.AsyncClient(
-            headers=headers,
-            timeout=30.0
+            timeout=30.0,
+            follow_redirects=True
         )
+        
+        # Attempt authentication if credentials are provided
+        if settings.WORDPRESS_USERNAME and settings.WORDPRESS_PASSWORD:
+            await self._authenticate_session()
+    
+    async def _authenticate_session(self) -> bool:
+        """Authenticate with WordPress using session login"""
+        try:
+            # Step 1: Get login page to obtain nonce and cookies
+            login_url = f"{self.base_url}/wp-login.php"
+            response = await self.client.get(login_url)
+            response.raise_for_status()
+            
+            # Extract nonce from login form (if present)
+            nonce = None
+            if 'name="_wpnonce"' in response.text:
+                import re
+                nonce_match = re.search(r'name="_wpnonce"[^>]*value="([^"]*)"', response.text)
+                if nonce_match:
+                    nonce = nonce_match.group(1)
+            
+            # Step 2: Submit login credentials
+            login_data = {
+                "log": settings.WORDPRESS_USERNAME,
+                "pwd": settings.WORDPRESS_PASSWORD,
+                "wp-submit": "Log In",
+                "redirect_to": f"{self.base_url}/wp-admin/",
+                "testcookie": "1"
+            }
+            
+            if nonce:
+                login_data["_wpnonce"] = nonce
+            
+            response = await self.client.post(
+                login_url,
+                data=login_data,
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Referer": login_url
+                }
+            )
+            
+            # Check if login was successful
+            if response.status_code == 200 and "wp-admin" in str(response.url):
+                self.is_authenticated = True
+                print("WordPress authentication successful")
+                return True
+            else:
+                print(f"WordPress authentication failed: Status {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"WordPress authentication error: {e}")
+            return False
+    
+    async def get_authenticated_photo_url(self, photo_path: str) -> Optional[str]:
+        """Get photo URL for protected content that requires authentication"""
+        if not self.is_authenticated:
+            print("Not authenticated - cannot access protected content")
+            return None
+        
+        try:
+            # Construct full URL for the photo
+            if photo_path.startswith('http'):
+                photo_url = photo_path
+            else:
+                photo_url = f"{self.base_url}/{photo_path.lstrip('/')}"
+            
+            # Test if the photo is accessible
+            response = await self.client.head(photo_url)
+            
+            if response.status_code == 200:
+                return photo_url
+            else:
+                print(f"Photo not accessible: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error accessing authenticated photo: {e}")
+            return None
     
     async def get_speaker_photo(self, speaker_name: str, linkedin_url: Optional[str] = None) -> Optional[str]:
         """Get speaker photo URL from WordPress"""
@@ -42,17 +115,93 @@ class WordPressService(BaseService):
             await self.initialize()
         
         try:
-            # First try to find by name in posts/pages
+            # Method 1: Try direct URL pattern if known
+            photo_url = await self._try_direct_photo_url(speaker_name)
+            if photo_url:
+                return photo_url
+            
+            # Method 2: Search by name in posts/pages
             photo_url = await self._search_speaker_by_name(speaker_name)
+            if photo_url:
+                return photo_url
             
-            if not photo_url and linkedin_url:
-                # Try to find by LinkedIn URL
+            # Method 3: Try LinkedIn URL search
+            if linkedin_url:
                 photo_url = await self._search_speaker_by_linkedin(linkedin_url)
+                if photo_url:
+                    return photo_url
             
-            return photo_url
+            # Method 4: Try authenticated access if available
+            if self.is_authenticated:
+                photo_url = await self._try_authenticated_speaker_search(speaker_name)
+                if photo_url:
+                    return photo_url
+            
+            return None
             
         except Exception as e:
             print(f"WordPress speaker search failed: {e}")
+            return None
+    
+    async def _try_direct_photo_url(self, speaker_name: str) -> Optional[str]:
+        """Try direct photo URL patterns (customize for CMT site structure)"""
+        try:
+            # Common WordPress photo URL patterns
+            name_slug = speaker_name.lower().replace(' ', '-').replace('.', '')
+            
+            potential_urls = [
+                f"{self.base_url}/wp-content/uploads/speakers/{name_slug}.jpg",
+                f"{self.base_url}/wp-content/uploads/speakers/{name_slug}.png",
+                f"{self.base_url}/wp-content/uploads/{name_slug}.jpg",
+                f"{self.base_url}/wp-content/uploads/{name_slug}.png",
+                f"{self.base_url}/wp-content/uploads/speaker-photos/{name_slug}.jpg",
+                f"{self.base_url}/wp-content/uploads/speaker-photos/{name_slug}.png",
+            ]
+            
+            # Test each potential URL
+            for url in potential_urls:
+                try:
+                    response = await self.client.head(url)
+                    if response.status_code == 200:
+                        print(f"Found direct speaker photo: {url}")
+                        return url
+                except:
+                    continue
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error trying direct photo URLs: {e}")
+            return None
+    
+    async def _try_authenticated_speaker_search(self, speaker_name: str) -> Optional[str]:
+        """Try authenticated search for speaker photos in admin area"""
+        if not self.is_authenticated:
+            return None
+        
+        try:
+            # Search in media library for speaker photos
+            media_search_url = f"{self.base_url}/wp-admin/upload.php"
+            response = await self.client.get(
+                media_search_url,
+                params={"s": speaker_name}
+            )
+            
+            if response.status_code == 200:
+                # Parse response for image URLs (basic implementation)
+                import re
+                img_pattern = r'<img[^>]+src="([^"]*)"[^>]*>'
+                matches = re.findall(img_pattern, response.text)
+                
+                # Look for images that might be speaker photos
+                for img_url in matches:
+                    if any(keyword in img_url.lower() for keyword in ['speaker', 'photo', 'portrait']):
+                        return img_url
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error in authenticated speaker search: {e}")
             return None
     
     async def _search_speaker_by_name(self, speaker_name: str) -> Optional[str]:
