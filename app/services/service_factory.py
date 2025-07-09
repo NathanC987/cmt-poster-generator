@@ -6,9 +6,8 @@ from app.services.base_service import BaseImageGenerator, BaseTextProcessor, Bas
 from app.services.replicate_service import ReplicateImageGenerator
 from app.services.azure_openai_service import AzureOpenAITextProcessor
 from app.services.upstash_service import UpstashRateLimiter, MemoryRateLimiter
-from app.services.cloudflare_r2_service import CloudflareR2Storage, LocalStorage
-from app.services.wordpress_service import WordPressService
-from app.services.font_service import get_font_service
+from app.services.wordpress_storage_service import WordPressStorage
+from app.services.local_storage_service import LocalStorage
 
 class ServiceFactory:
     """Factory class to create service instances based on configuration"""
@@ -51,8 +50,8 @@ class ServiceFactory:
         """Create storage service based on configuration"""
         provider = settings.STORAGE_PROVIDER.lower()
         
-        if provider == "cloudflare_r2":
-            return CloudflareR2Storage(config)
+        if provider == "wordpress":
+            return WordPressStorage(config)
         elif provider == "local":
             return LocalStorage(config)
         else:

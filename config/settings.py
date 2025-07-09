@@ -24,11 +24,7 @@ class Settings(BaseSettings):
     UPSTASH_REDIS_TOKEN: Optional[str] = None
     
     # Storage
-    STORAGE_PROVIDER: str = "cloudflare_r2"
-    R2_BUCKET: Optional[str] = None
-    R2_ACCESS_KEY_ID: Optional[str] = None
-    R2_SECRET_ACCESS_KEY: Optional[str] = None
-    R2_ENDPOINT: Optional[str] = None
+    STORAGE_PROVIDER: str = "wordpress"
     
     # WordPress Integration (for speaker photos)
     WORDPRESS_URL: Optional[str] = None
