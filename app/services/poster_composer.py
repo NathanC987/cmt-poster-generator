@@ -150,11 +150,50 @@ class PosterComposer:
             landmark_img = self._resize_and_crop(landmark_img, self.poster_width, self.poster_height)
             poster.paste(landmark_img, (0, 0))
         
-        # Add overlay for better text readability
+        # Add dark overlay for better text readability
         overlay = Image.new('RGBA', (self.poster_width, self.poster_height), (0, 0, 0, 128))
         poster = Image.alpha_composite(poster.convert('RGBA'), overlay)
         
+        # Add branding overlay if available
+        poster = await self._add_branding_overlay(poster)
+        
         return poster.convert('RGB')
+    
+    async def _add_branding_overlay(self, poster: Image.Image) -> Image.Image:
+        """Add branding overlay from WordPress media"""
+        try:
+            # Search for branding overlay in WordPress media
+            overlay_url = await self._search_wordpress_media("overlay")
+            
+            if overlay_url:
+                print(f"Found branding overlay: {overlay_url}")
+                
+                # Download the overlay image
+                overlay_img = await self._download_image(overlay_url)
+                
+                # Convert poster to RGBA for overlay blending
+                poster_rgba = poster.convert('RGBA')
+                
+                # Resize overlay to match poster dimensions if needed
+                if overlay_img.size != (self.poster_width, self.poster_height):
+                    overlay_img = overlay_img.resize((self.poster_width, self.poster_height), Image.Resampling.LANCZOS)
+                
+                # Ensure overlay has alpha channel
+                if overlay_img.mode != 'RGBA':
+                    overlay_img = overlay_img.convert('RGBA')
+                
+                # Blend the overlay with the poster
+                poster_rgba = Image.alpha_composite(poster_rgba, overlay_img)
+                
+                print("Branding overlay applied successfully")
+                return poster_rgba
+            else:
+                print("No branding overlay found - continuing without overlay")
+                return poster
+                
+        except Exception as e:
+            print(f"Error applying branding overlay: {e}")
+            return poster
     
     async def _add_event_info(self, poster: Image.Image, event_details: EventDetails, poster_type: str) -> Image.Image:
         """Add event information to poster"""
