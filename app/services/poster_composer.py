@@ -437,25 +437,35 @@ class PosterComposer:
         # No photo found
         return None
     
-    async def _get_landmark_image(self, city: str, country: str) -> str:
-        """Get landmark image (from cache or generate new)"""
-        # Check cache first
-        cache_key = self.storage.generate_cache_key(city, country)
-        
-        if await self.storage.file_exists(cache_key):
-            return await self.storage.get_file_url(cache_key)
-        
-        # Generate new landmark image
-        landmark_url = await self.image_generator.generate_landmark_image(city, country)
-        
-        # Cache the landmark image
+    async def _get_landmark_image(self, city: str, country: str) -> Optional[str]:
+        """Get landmark image from WordPress media library"""
         try:
-            image_data = await self._download_image_data(landmark_url)
-            cached_url = await self.storage.upload_file(cache_key, image_data, "image/png")
-            return cached_url
+            # Check if landmark exists in WordPress media
+            cache_key = self.storage.generate_cache_key(city, country)
+            
+            if await self.storage.file_exists(cache_key):
+                return await self.storage.get_file_url(cache_key)
+            
+            # Try alternative naming patterns for manually uploaded images
+            alternative_names = [
+                f"cmt-landmarks/{city.lower()}-{country.lower()}.png",
+                f"cmt-landmarks/{city.lower()}-{country.lower()}.jpg",
+                f"cmt-landmarks/{city.lower()}.png",
+                f"cmt-landmarks/{city.lower()}.jpg",
+                f"landmarks/{city.lower()}-{country.lower()}.png",
+                f"landmarks/{city.lower()}-{country.lower()}.jpg",
+            ]
+            
+            for alt_name in alternative_names:
+                if await self.storage.file_exists(alt_name):
+                    return await self.storage.get_file_url(alt_name)
+            
+            print(f"No landmark image found for {city}, {country}")
+            return None
+            
         except Exception as e:
-            print(f"Failed to cache landmark image: {e}")
-            return landmark_url
+            print(f"Error getting landmark image: {e}")
+            return None
     
     async def _download_image(self, url: str) -> Image.Image:
         """Download image from URL"""

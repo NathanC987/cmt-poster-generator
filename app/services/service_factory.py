@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from config.settings import settings
 from app.services.base_service import BaseImageGenerator, BaseTextProcessor, BaseRateLimiter, BaseStorage
 
@@ -13,14 +13,19 @@ class ServiceFactory:
     """Factory class to create service instances based on configuration"""
     
     @staticmethod
-    def create_image_generator(config: Dict[str, Any] = None) -> BaseImageGenerator:
+    def create_image_generator(config: Dict[str, Any] = None) -> Optional[BaseImageGenerator]:
         """Create image generator service based on configuration"""
         provider = settings.IMAGE_PROVIDER.lower()
         
         if provider == "replicate":
-            return ReplicateImageGenerator(config)
+            if settings.REPLICATE_API_TOKEN:
+                return ReplicateImageGenerator(config)
+            else:
+                print("Replicate API token not provided - image generation disabled")
+                return None
         else:
-            raise ValueError(f"Unsupported image provider: {provider}")
+            print(f"Image provider '{provider}' not configured - image generation disabled")
+            return None
     
     @staticmethod
     def create_text_processor(config: Dict[str, Any] = None) -> BaseTextProcessor:
@@ -64,7 +69,7 @@ _text_processor = None
 _rate_limiter = None
 _storage = None
 
-def get_image_generator() -> BaseImageGenerator:
+def get_image_generator() -> Optional[BaseImageGenerator]:
     """Get global image generator instance"""
     global _image_generator
     if _image_generator is None:
@@ -94,7 +99,9 @@ def get_storage() -> BaseStorage:
 
 async def initialize_services():
     """Initialize all services"""
-    await get_image_generator().initialize()
+    image_gen = get_image_generator()
+    if image_gen:
+        await image_gen.initialize()
     await get_text_processor().initialize()
     await get_rate_limiter().initialize()
     await get_storage().initialize()
@@ -125,7 +132,10 @@ async def get_services_status() -> Dict[str, Any]:
     
     try:
         image_gen = get_image_generator()
-        status["image_generator"] = await image_gen.get_service_status()
+        if image_gen:
+            status["image_generator"] = await image_gen.get_service_status()
+        else:
+            status["image_generator"] = {"status": "disabled", "reason": "No Replicate API token configured"}
     except Exception as e:
         status["image_generator"] = {"status": "error", "error": str(e)}
     
