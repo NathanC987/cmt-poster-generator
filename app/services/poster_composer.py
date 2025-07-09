@@ -140,8 +140,8 @@ class PosterComposer:
         }
     
     async def _create_base_poster(self, landmark_url: Optional[str] = None) -> Image.Image:
-        """Create base poster with landmark background and overlay"""
-        # Create base canvas
+        """Create base poster with 3-layer structure: background → overlay.png → content"""
+        # Layer 1: Background/Landmark image
         poster = Image.new('RGB', (self.poster_width, self.poster_height), self.colors["background"])
         
         if landmark_url:
@@ -150,14 +150,15 @@ class PosterComposer:
             landmark_img = self._resize_and_crop(landmark_img, self.poster_width, self.poster_height)
             poster.paste(landmark_img, (0, 0))
         
-        # Add dark overlay for better text readability
-        overlay = Image.new('RGBA', (self.poster_width, self.poster_height), (0, 0, 0, 128))
-        poster = Image.alpha_composite(poster.convert('RGBA'), overlay)
+        # Convert to RGBA for overlay blending
+        poster = poster.convert('RGBA')
         
-        # Add branding overlay if available
+        # Layer 2: Branding overlay (overlay.png from WordPress)
         poster = await self._add_branding_overlay(poster)
         
-        return poster.convert('RGB')
+        # Layer 3: Content will be added by other methods (_add_event_info, etc.)
+        
+        return poster
     
     async def _add_branding_overlay(self, poster: Image.Image) -> Image.Image:
         """Add branding overlay from WordPress media"""

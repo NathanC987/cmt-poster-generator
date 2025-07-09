@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config.settings import settings
-from app.models.request_models import PosterGenerationRequest, LandmarkRequest, TextProcessingRequest
+from app.models.request_models import PosterGenerationRequest, PowerAutomateRequest, LandmarkRequest, TextProcessingRequest
 from app.models.response_models import (
     PosterGenerationResponse, LandmarkResponse, TextProcessingResponse,
     HealthResponse, ErrorResponse
@@ -183,8 +183,135 @@ async def health_check():
     }
 
 @app.post("/generate-posters", response_model=PosterGenerationResponse, dependencies=[Depends(check_rate_limit)])
-async def generate_posters(request: PosterGenerationRequest):
-    """Main poster generation endpoint for Power Automate integration"""
+async def generate_posters_power_automate(request: PowerAutomateRequest):
+    """Power Automate poster generation endpoint (handles direct payload format)"""
+    start_time_req = time.time()
+    errors = []
+    
+    try:
+        # Convert Power Automate format to internal format
+        from app.models.request_models import EventDetails, SpeakerInfo, PosterGenerationRequest
+        
+        # Extract city and country from venue
+        # For "Metro Manila" -> city: "Manila", country: "Philippines"  
+        # For "WeWork Vaswani Chambers" -> city: "Mumbai", country: "India" (need to parse or map)
+        venue_parts = request.venue.lower()
+        
+        # Simple venue mapping - you can extend this
+        city = "Manila"  # Default
+        country = "Philippines"  # Default
+        
+        if "mumbai" in venue_parts or "vaswani" in venue_parts:
+            city = "Mumbai"
+            country = "India"
+        elif "bangalore" in venue_parts or "bengaluru" in venue_parts:
+            city = "Bangalore"
+            country = "India"
+        elif "delhi" in venue_parts or "gurgaon" in venue_parts:
+            city = "Delhi"
+            country = "India"
+        elif "manila" in venue_parts or "metro manila" in request.title.lower():
+            city = "Manila"
+            country = "Philippines"
+        
+        # Create event details
+        event_details = EventDetails(
+            title=request.title,
+            description=request.description,
+            date=request.date,
+            venue=request.venue,
+            city=city,
+            country=country,
+            theme=request.theme,
+            registration_url=None
+        )
+        
+        # Parse speakers from text
+        speakers = []
+        if request.speakers:
+            # Extract speaker info from text - simple parsing
+            speaker_text = request.speakers
+            
+            # Look for LinkedIn URLs to extract speaker info
+            import re
+            linkedin_pattern = r'https?://[^\s]*linkedin[^\s]*'
+            linkedin_matches = re.findall(linkedin_pattern, speaker_text)
+            
+            # For now, create one speaker with community leader info
+            if request.community_leader:
+                speakers.append(SpeakerInfo(
+                    name=request.community_leader,
+                    bio="Community Leader",
+                    title="Community Leader",
+                    organization="CMT Association",
+                    linkedin_url=linkedin_matches[0] if linkedin_matches else None,
+                    photo_url=None
+                ))
+            
+            # Try to extract speaker names from the speaker text
+            # This is a simple implementation - you can enhance it
+            lines = speaker_text.split('\n')
+            for line in lines:
+                if any(keyword in line.lower() for keyword in ['director', 'manager', 'ceo', 'strategist']):
+                    # Try to extract name (first sentence before comma or period)
+                    name_match = re.match(r'^([^,\.]+)', line.strip())
+                    if name_match and len(name_match.group(1).split()) >= 2:
+                        name = name_match.group(1).strip()
+                        if name != request.community_leader:  # Don't duplicate
+                            speakers.append(SpeakerInfo(
+                                name=name,
+                                bio=line.strip(),
+                                title="Speaker",
+                                organization="",
+                                linkedin_url=linkedin_matches[0] if linkedin_matches else None,
+                                photo_url=None
+                            ))
+                            break  # Only add one speaker for now
+        
+        # Create poster generation request
+        poster_request = PosterGenerationRequest(
+            event_details=event_details,
+            speakers=speakers,
+            poster_types=["general"]  # Default to general poster
+        )
+        
+        # Initialize poster composer
+        composer = PosterComposer()
+        
+        # Generate posters
+        posters = await composer.generate_posters(poster_request)
+        
+        generation_time = time.time() - start_time_req
+        event_id = composer._generate_event_id(event_details)
+        
+        return PosterGenerationResponse(
+            success=True,
+            message=f"Successfully generated {len(posters)} posters",
+            event_id=event_id,
+            posters=posters,
+            generation_time=generation_time,
+            cached_landmark=False,
+            errors=errors
+        )
+        
+    except Exception as e:
+        generation_time = time.time() - start_time_req
+        error_msg = str(e)
+        errors.append(error_msg)
+        
+        return PosterGenerationResponse(
+            success=False,
+            message=f"Failed to generate posters: {error_msg}",
+            event_id="",
+            posters=[],
+            generation_time=generation_time,
+            cached_landmark=False,
+            errors=errors
+        )
+
+@app.post("/generate-posters-structured", response_model=PosterGenerationResponse, dependencies=[Depends(check_rate_limit)])
+async def generate_posters_structured(request: PosterGenerationRequest):
+    """Structured poster generation endpoint (for manual testing)"""
     start_time_req = time.time()
     errors = []
     

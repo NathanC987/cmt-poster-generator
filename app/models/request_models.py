@@ -21,6 +21,19 @@ class EventDetails(BaseModel):
     theme: Optional[str] = Field(None, description="Event theme")
     registration_url: Optional[str] = Field(None, description="Registration URL")
 
+# Power Automate Direct Request Format
+class PowerAutomateRequest(BaseModel):
+    title: str = Field(..., description="Event title")
+    format: Optional[str] = Field(None, description="Event format description")
+    date: datetime = Field(..., description="Event date")
+    time: Optional[str] = Field(None, description="Event time")
+    venue: str = Field(..., description="Event venue")
+    community_leader: Optional[str] = Field(None, description="Community leader name")
+    co_volunteers: Optional[str] = Field(None, description="Co-volunteers")
+    theme: Optional[str] = Field(None, description="Event theme")
+    description: str = Field(..., description="Event description")
+    speakers: str = Field(..., description="Speakers information as text")
+
 class PosterGenerationRequest(BaseModel):
     event_details: EventDetails
     speakers: List[SpeakerInfo] = Field(..., description="List of speakers")
