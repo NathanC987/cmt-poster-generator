@@ -440,31 +440,73 @@ class PosterComposer:
     async def _get_landmark_image(self, city: str, country: str) -> Optional[str]:
         """Get landmark image from WordPress media library"""
         try:
-            # Check if landmark exists in WordPress media
-            cache_key = self.storage.generate_cache_key(city, country)
+            # Search for landmark images using WordPress REST API
+            # WordPress automatically organizes by date: /wp-content/uploads/YYYY/MM/filename.jpg
             
-            if await self.storage.file_exists(cache_key):
-                return await self.storage.get_file_url(cache_key)
-            
-            # Try alternative naming patterns for manually uploaded images
-            alternative_names = [
-                f"cmt-landmarks/{city.lower()}-{country.lower()}.png",
-                f"cmt-landmarks/{city.lower()}-{country.lower()}.jpg",
-                f"cmt-landmarks/{city.lower()}.png",
-                f"cmt-landmarks/{city.lower()}.jpg",
-                f"landmarks/{city.lower()}-{country.lower()}.png",
-                f"landmarks/{city.lower()}-{country.lower()}.jpg",
+            # Search patterns for manually uploaded images
+            search_terms = [
+                f"{city.lower()}-{country.lower()}",
+                f"{city.lower()}-{country.lower().replace(' ', '-')}",
+                f"{city.lower()}",
+                f"{city.replace(' ', '-').lower()}-{country.lower()}",
+                f"{city.replace(' ', '').lower()}-{country.lower()}",
             ]
             
-            for alt_name in alternative_names:
-                if await self.storage.file_exists(alt_name):
-                    return await self.storage.get_file_url(alt_name)
+            # Use WordPress storage service to search for images
+            for search_term in search_terms:
+                try:
+                    # Search in WordPress media using REST API
+                    landmark_url = await self._search_wordpress_media(search_term)
+                    if landmark_url:
+                        print(f"Found landmark image for {city}, {country}: {landmark_url}")
+                        return landmark_url
+                except Exception as e:
+                    print(f"Error searching for {search_term}: {e}")
+                    continue
             
             print(f"No landmark image found for {city}, {country}")
             return None
             
         except Exception as e:
             print(f"Error getting landmark image: {e}")
+            return None
+    
+    async def _search_wordpress_media(self, search_term: str) -> Optional[str]:
+        """Search WordPress media library for images by filename"""
+        try:
+            import httpx
+            
+            # Use WordPress REST API to search media
+            search_url = f"https://cmtpl.org/wp-json/wp/v2/media"
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    search_url,
+                    params={
+                        "search": search_term,
+                        "media_type": "image",
+                        "per_page": 10
+                    }
+                )
+                
+                if response.status_code == 200:
+                    media_items = response.json()
+                    
+                    for item in media_items:
+                        source_url = item.get("source_url", "")
+                        filename = item.get("title", {}).get("rendered", "").lower()
+                        alt_text = item.get("alt_text", "").lower()
+                        
+                        # Check if this image matches our search criteria
+                        if (search_term in source_url.lower() or 
+                            search_term in filename or 
+                            search_term in alt_text):
+                            return source_url
+                
+                return None
+                
+        except Exception as e:
+            print(f"Error searching WordPress media: {e}")
             return None
     
     async def _download_image(self, url: str) -> Image.Image:
