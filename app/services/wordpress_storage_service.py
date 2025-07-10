@@ -83,73 +83,43 @@ class WordPressStorage(BaseStorage):
             return False
     
     async def upload_file(self, file_path: str, content: bytes, content_type: str) -> str:
-        """Upload file to WordPress media library and return public URL"""
-        if not self.is_authenticated:
-            raise Exception("WordPress authentication required for media uploads")
-        
-        try:
-            # Determine filename from file_path
-            filename = file_path.split('/')[-1]
-            
-            # Get upload page to obtain nonce
-            upload_url = f"{self.base_url}/wp-admin/async-upload.php"
-            media_page = f"{self.base_url}/wp-admin/media-new.php"
-            
-            # Get upload nonce
-            response = await self.client.get(media_page)
-            nonce = None
-            if 'name="_wpnonce"' in response.text:
-                import re
-                nonce_match = re.search(r'name="_wpnonce"[^>]*value="([^"]*)"', response.text)
-                if nonce_match:
-                    nonce = nonce_match.group(1)
-            
-            # Prepare multipart form data
-            files = {
-                'async-upload': (filename, content, content_type)
-            }
-            
-            form_data = {
-                'name': filename,
-                'action': 'upload-attachment',
-                'html5': '1',
-                'post_id': '0'
-            }
-            
-            if nonce:
-                form_data['_wpnonce'] = nonce
-            
-            # Upload file
-            response = await self.client.post(
+        """
+        Upload file to WordPress media library using Basic Auth and REST API.
+        This matches the working curl command for WordPress.com.
+        """
+
+        # Use REST API endpoint directly, with Basic Auth and correct headers
+        filename = file_path.split('/')[-1]
+        upload_url = f"{self.base_url}/wp-json/wp/v2/media"
+
+        # Prepare Basic Auth header
+        user = settings.WORDPRESS_USERNAME
+        password = settings.WORDPRESS_PASSWORD
+        userpass = f"{user}:{password}"
+        basic_auth = base64.b64encode(userpass.encode()).decode()
+
+        headers = {
+            "Authorization": f"Basic {basic_auth}",
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": content_type,
+            "User-Agent": "CMTPosterBot/1.0"
+        }
+
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            response = await client.post(
                 upload_url,
-                files=files,
-                data=form_data
+                headers=headers,
+                content=content
             )
-            
-            if response.status_code == 200:
-                # Extract media ID from response
-                import re
-                media_id_match = re.search(r'"id":(\d+)', response.text)
-                if media_id_match:
-                    media_id = media_id_match.group(1)
-                    
-                    # Get media URL using REST API
-                    media_url = await self._get_media_url_by_id(media_id)
-                    if media_url:
-                        print(f"Successfully uploaded to WordPress: {media_url}")
-                        return media_url
-                
-                # Fallback: try to extract URL directly
-                url_match = re.search(r'"url":"([^"]*)"', response.text)
-                if url_match:
-                    media_url = url_match.group(1).replace('\\/', '/')
-                    print(f"Successfully uploaded to WordPress: {media_url}")
-                    return media_url
-            
-            raise Exception(f"Upload failed with status: {response.status_code}")
-            
-        except Exception as e:
-            raise Exception(f"Failed to upload to WordPress media: {str(e)}")
+            if response.status_code in (200, 201):
+                json_resp = response.json()
+                media_url = json_resp.get("source_url")
+                print(f"Successfully uploaded to WordPress: {media_url}")
+                return media_url
+            else:
+                text = response.text
+                print(f"WordPress upload failed: {response.status_code} {text}")
+                raise Exception(f"WordPress upload failed: {response.status_code} {text}")
     
     async def _get_media_url_by_id(self, media_id: str) -> Optional[str]:
         """Get media URL by ID using REST API"""
