@@ -453,27 +453,52 @@ class PosterComposer:
                 break
     
     async def _get_speaker_photo(self, speaker: SpeakerInfo) -> Optional[str]:
-        """Get speaker photo from multiple sources"""
-        # First priority: provided photo URL
+        """Get speaker photo from WordPress media by name variants, or use provided URL"""
+        # 1. Provided photo URL
         if speaker.photo_url:
             return speaker.photo_url
-        
-        # Second priority: try WordPress lookup
+
+        # 2. Try WordPress REST API search by name variants
         try:
-            wordpress_service = WordPressService()
-            await wordpress_service.initialize()
-            
-            photo_url = await wordpress_service.get_speaker_photo(
-                speaker.name, 
-                speaker.linkedin_url
-            )
-            
-            if photo_url:
-                return photo_url
-                
+            import httpx
+            search_url = "https://cmtpl.org/wp-json/wp/v2/media"
+            name_variants = [
+                speaker.name.lower().replace(" ", "-"),
+                speaker.name.lower().replace(" ", "_"),
+                speaker.name.lower().replace(" ", ""),
+                speaker.name.lower(),
+            ]
+            # Also try first name only, last name only
+            parts = speaker.name.lower().split()
+            if len(parts) > 1:
+                name_variants.append(parts[0])
+                name_variants.append(parts[-1])
+
+            async with httpx.AsyncClient() as client:
+                for variant in name_variants:
+                    response = await client.get(
+                        search_url,
+                        params={
+                            "search": variant,
+                            "media_type": "image",
+                            "per_page": 10
+                        }
+                    )
+                    if response.status_code == 200:
+                        media_items = response.json()
+                        for item in media_items:
+                            source_url = item.get("source_url", "")
+                            filename = item.get("title", {}).get("rendered", "").lower()
+                            alt_text = item.get("alt_text", "").lower()
+                            # Accept jpg or png, match variant in filename/title/alt
+                            if (
+                                (variant in source_url.lower() or variant in filename or variant in alt_text)
+                                and (source_url.lower().endswith(".jpg") or source_url.lower().endswith(".png"))
+                            ):
+                                return source_url
         except Exception as e:
-            print(f"WordPress photo lookup failed for {speaker.name}: {e}")
-        
+            print(f"WordPress speaker photo search failed for {speaker.name}: {e}")
+
         # No photo found
         return None
     
