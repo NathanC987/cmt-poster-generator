@@ -16,21 +16,18 @@ class WordPressStorage(BaseStorage):
         self.is_authenticated = False
     
     async def _initialize(self):
-        """Initialize WordPress storage client"""
+        """Initialize WordPress storage client (REST API only, no session login needed)"""
         if not settings.WORDPRESS_URL:
             raise ValueError("WORDPRESS_URL is required for WordPress storage")
         
         self.base_url = settings.WORDPRESS_URL.rstrip('/')
         
-        # Create HTTP client with persistent cookies
+        # Create HTTP client for REST API usage only
         self.client = httpx.AsyncClient(
             timeout=60.0,  # Longer timeout for media uploads
             follow_redirects=True
         )
-        
-        # Authenticate if credentials are provided
-        if settings.WORDPRESS_USERNAME and settings.WORDPRESS_PASSWORD:
-            await self._authenticate_session()
+        # No session authentication needed for REST API uploads
     
     async def _authenticate_session(self) -> bool:
         """Authenticate with WordPress using session login"""
