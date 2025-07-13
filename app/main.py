@@ -8,11 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from config.settings import settings
-from app.models.request_models import PosterGenerationRequest, PowerAutomateRequest, LandmarkRequest, TextProcessingRequest
-from app.models.response_models import (
-    PosterGenerationResponse, LandmarkResponse, TextProcessingResponse,
-    HealthResponse, ErrorResponse
-)
+from app.models.request_models import PosterGenerationRequest, PowerAutomateRequest
+from app.models.response_models import PosterGenerationResponse
 from app.services.service_factory import (
     initialize_services, cleanup_services, get_services_status,
     get_rate_limiter, get_image_generator, get_text_processor
@@ -300,9 +297,10 @@ async def root():
         },
         "endpoints": {
             "generate_posters": "/generate-posters",
-            "landmarks": "/landmarks",
-            "process_text": "/process-text",
-            "last_payload": "/last-payload"
+            "generate_posters_structured": "/generate-posters-structured",
+            "debug_payload": "/debug-payload",
+            "last_payload": "/last-payload",
+            "services_status": "/services/status"
         }
     }
 
@@ -450,81 +448,8 @@ async def generate_posters_structured(request: PosterGenerationRequest):
             errors=errors
         )
 
-@app.post("/landmarks", response_model=LandmarkResponse, dependencies=[Depends(check_rate_limit)])
-async def generate_landmark(request: LandmarkRequest):
-    """Generate or retrieve landmark image"""
-    start_time_req = time.time()
-    
-    try:
-        image_generator = get_image_generator()
-        
-        # Generate landmark image
-        landmark_url = await image_generator.generate_landmark_image(
-            request.city,
-            request.country,
-            request.style
-        )
-        
-        generation_time = time.time() - start_time_req
-        
-        return LandmarkResponse(
-            success=True,
-            landmark_name=f"Famous landmark in {request.city}",
-            city=request.city,
-            country=request.country,
-            image_url=landmark_url,
-            cached=False,  # Direct generation
-            generation_time=generation_time
-        )
-        
-    except Exception as e:
-        generation_time = time.time() - start_time_req
-        
-        return LandmarkResponse(
-            success=False,
-            landmark_name="",
-            city=request.city,
-            country=request.country,
-            image_url="",
-            cached=False,
-            generation_time=generation_time
-        )
-
-@app.post("/process-text", response_model=TextProcessingResponse, dependencies=[Depends(check_rate_limit)])
-async def process_text(request: TextProcessingRequest):
-    """Process and summarize text"""
-    start_time_req = time.time()
-    
-    try:
-        text_processor = get_text_processor()
-        
-        # Process text
-        processed_text = await text_processor.summarize_text(
-            request.original_text,
-            request.target_length,
-            request.style
-        )
-        
-        processing_time = time.time() - start_time_req
-        
-        return TextProcessingResponse(
-            success=True,
-            processed_text=processed_text,
-            original_length=len(request.original_text),
-            processed_length=len(processed_text),
-            processing_time=processing_time
-        )
-        
-    except Exception as e:
-        processing_time = time.time() - start_time_req
-        
-        return TextProcessingResponse(
-            success=False,
-            processed_text="",
-            original_length=len(request.original_text),
-            processed_length=0,
-            processing_time=processing_time
-        )
+# Removed unused endpoints - landmarks and process-text
+# These are not needed for the core poster generation flow
 
 @app.post("/debug-payload")
 async def debug_payload(request: Request):
