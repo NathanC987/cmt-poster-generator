@@ -44,6 +44,22 @@ class Settings(BaseSettings):
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_WINDOW: int = 3600  # 1 hour
     
+    # AI Model Configuration
+    AZURE_OPENAI_TEMPERATURE: float = 0.7
+    AZURE_OPENAI_MAX_TOKENS: int = 150
+    
+    # Image Processing
+    SPEAKER_PHOTO_CACHE_DURATION: int = 86400  # 24 hours
+    LANDMARK_SEARCH_TIMEOUT: int = 30  # seconds
+    
+    # WordPress Media
+    WORDPRESS_MEDIA_TIMEOUT: int = 60  # seconds for uploads
+    WORDPRESS_SEARCH_LIMIT: int = 50  # max items to search
+    
+    # Performance Settings
+    REQUEST_TIMEOUT: int = 25  # seconds
+    IMAGE_DOWNLOAD_TIMEOUT: int = 10  # seconds
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

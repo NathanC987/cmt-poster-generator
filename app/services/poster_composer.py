@@ -33,56 +33,79 @@ class PosterComposer:
         }
     
     async def generate_posters(self, request: PosterGenerationRequest) -> List[Dict[str, Any]]:
-        """Generate all requested poster types"""
+        """Generate all requested poster types with fast-fail validation"""
         posters = []
         event_id = self._generate_event_id(request.event_details)
         
-        # Get or generate landmark background
-        landmark_url = await self._get_landmark_image(
+        # Fast validation of prerequisites
+        validation_errors = await self._validate_prerequisites(request)
+        if validation_errors:
+            print(f"Validation errors found: {validation_errors}")
+            # Continue with generation but log warnings
+            
+        # Get landmark background (optimized search)
+        landmark_url = await self._get_landmark_image_optimized(
             request.event_details.city,
             request.event_details.country
         )
         
+        if not landmark_url:
+            print(f"Warning: No landmark found for {request.event_details.city}, {request.event_details.country}")
+            # Use a default background or continue without landmark
+        
         # Generate different poster types
         for poster_type in request.poster_types:
-            if poster_type == "general":
-                poster_info = await self._generate_general_poster(
-                    request, event_id, landmark_url
-                )
-            elif poster_type == "speaker":
-                # Generate one poster per speaker
-                for speaker in request.speakers:
-                    poster_info = await self._generate_speaker_poster(
-                        request, speaker, event_id, landmark_url
+            try:
+                if poster_type == "general":
+                    poster_info = await self._generate_general_poster(
+                        request, event_id, landmark_url
                     )
-                    posters.append(poster_info)
+                elif poster_type == "speaker":
+                    # Generate one poster per speaker
+                    for speaker in request.speakers:
+                        poster_info = await self._generate_speaker_poster(
+                            request, speaker, event_id, landmark_url
+                        )
+                        posters.append(poster_info)
+                    continue
+                elif poster_type == "theme":
+                    poster_info = await self._generate_theme_poster(
+                        request, event_id, landmark_url
+                    )
+                else:
+                    print(f"Unknown poster type: {poster_type}")
+                    continue
+                
+                posters.append(poster_info)
+                
+            except Exception as e:
+                print(f"Error generating {poster_type} poster: {e}")
+                # Continue with other poster types
                 continue
-            elif poster_type == "theme":
-                poster_info = await self._generate_theme_poster(
-                    request, event_id, landmark_url
-                )
-            else:
-                continue
-            
-            posters.append(poster_info)
         
         return posters
     
     async def _generate_general_poster(self, request: PosterGenerationRequest, event_id: str, landmark_url: str) -> Dict[str, Any]:
-        """Generate general overview poster"""
-        # Create base poster
+        """Generate general overview poster following the exact template layout"""
+        # Create base poster (landmark + overlay)
         poster = await self._create_base_poster(landmark_url)
         
-        # Add event information
+        # Template Layout:
+        # 1. Title at top (big and bold)
+        # 2. Summarized description below title  
+        # 3. Speaker grid with circular photos and credentials
+        # 4. Event details at bottom (date, time, venue)
+        
+        # Add event information (title + description)
         poster = await self._add_event_info(poster, request.event_details, "general")
         
-        # Add speakers grid
-        poster = await self._add_speakers_grid(poster, request.speakers)
+        # Add speakers grid with circular photos and credentials
+        poster = await self._add_speakers_grid_template(poster, request.speakers)
         
-        # Add call-to-action
-        poster = await self._add_cta(poster, request.event_details)
+        # Add event details at bottom (date, time, venue)
+        poster = await self._add_event_details_bottom(poster, request.event_details)
         
-        # Save poster
+        # Save poster to WordPress media
         poster_url = await self._save_poster(poster, event_id, "general")
         
         return {
@@ -197,54 +220,179 @@ class PosterComposer:
             return poster
     
     async def _add_event_info(self, poster: Image.Image, event_details: EventDetails, poster_type: str) -> Image.Image:
-        """Add event information to poster"""
+        """Add event information to poster following the exact template layout"""
         draw = ImageDraw.Draw(poster)
         
         # Load fonts using font service
         font_service = await get_font_service()
-        title_font = font_service.get_title_font(48)
-        subtitle_font = font_service.get_subtitle_font(28)
-        body_font = font_service.get_body_font(24)
+        title_font = font_service.get_title_font(52)  # Big and bold title
+        desc_font = font_service.get_body_font(24)
+        details_font = font_service.get_subtitle_font(22)
         
-        # Position calculations
+        # Position calculations - following your template
         margin = 60
         y_position = margin
         
-        # Title
+        # 1. Title at the top - big and bold
         title_text = event_details.title
         if poster_type == "speaker":
             title_text = f"Speaker Session: {title_text}"
         elif poster_type == "theme" and event_details.theme:
-            title_text = f"Theme: {event_details.theme}"
+            title_text = event_details.theme
         
         title_lines = self._wrap_text(title_text, title_font, self.poster_width - 2 * margin)
         for line in title_lines:
-            draw.text((margin, y_position), line, fill="white", font=title_font)
-            y_position += 60
+            # Draw text with shadow for better visibility
+            draw.text((margin + 2, y_position + 2), line, fill="black", font=title_font)  # Shadow
+            draw.text((margin, y_position), line, fill="white", font=title_font)  # Main text
+            y_position += 65
         
-        y_position += 20
+        y_position += 30  # Space after title
         
-        # Date and venue
-        date_str = event_details.date.strftime("%B %d, %Y at %I:%M %p")
-        venue_text = f"📍 {event_details.venue}, {event_details.city}"
+        # 2. Summarized description below title
+        if poster_type == "general":
+            desc_text = await self._summarize_description(event_details.description, 200)
+            desc_lines = self._wrap_text(desc_text, desc_font, self.poster_width - 2 * margin)
+            for line in desc_lines[:3]:  # Limit to 3 lines
+                draw.text((margin + 1, y_position + 1), line, fill="black", font=desc_font)  # Shadow
+                draw.text((margin, y_position), line, fill="white", font=desc_font)
+                y_position += 32
+            
+            y_position += 40  # Space before speaker grid
         
-        draw.text((margin, y_position), date_str, fill="white", font=subtitle_font)
-        y_position += 35
-        draw.text((margin, y_position), venue_text, fill="white", font=subtitle_font)
-        y_position += 50
+        # Store the current y_position for speaker grid positioning
+        self.content_y_position = y_position
         
-        # Description (if space allows)
-        if poster_type == "general" or poster_type == "theme":
-            desc_text = await self._summarize_description(event_details.description, 150)
-            desc_lines = self._wrap_text(desc_text, body_font, self.poster_width - 2 * margin)
-            for line in desc_lines[:4]:  # Limit to 4 lines
-                draw.text((margin, y_position), line, fill="white", font=body_font)
-                y_position += 30
+        return poster
+    async def _add_event_details_bottom(self, poster: Image.Image, event_details: EventDetails) -> Image.Image:
+        """Add event details (date, time, venue) at the bottom after speaker grid"""
+        draw = ImageDraw.Draw(poster)
+        
+        # Load fonts
+        font_service = await get_font_service()
+        details_font = font_service.get_subtitle_font(26)
+        
+        # Position at bottom section
+        y_position = self.poster_height - 200  # Reserve bottom space
+        margin = 60
+        
+        # Format event details
+        date_str = event_details.date.strftime("%B %d, %Y")
+        time_str = event_details.date.strftime("%I:%M %p")
+        venue_str = f"{event_details.venue}, {event_details.city}"
+        
+        # Event details with icons
+        details = [
+            f"📅 {date_str}",
+            f"🕐 {time_str}", 
+            f"📍 {venue_str}"
+        ]
+        
+        for detail in details:
+            # Draw with shadow for visibility
+            draw.text((margin + 2, y_position + 2), detail, fill="black", font=details_font)
+            draw.text((margin, y_position), detail, fill="white", font=details_font)
+            y_position += 35
         
         return poster
     
+    async def _add_speakers_grid_template(self, poster: Image.Image, speakers: List[SpeakerInfo]) -> Image.Image:
+        """Add speakers grid following the exact template layout"""
+        if not speakers:
+            return poster
+        
+        # Calculate grid layout based on speaker count
+        speaker_count = len(speakers)
+        layout = self._calculate_speaker_layout(speaker_count)
+        
+        # Use the y_position from content positioning
+        start_y = getattr(self, 'content_y_position', 400)
+        grid_width = self.poster_width - 120  # 60px margin on each side
+        
+        # Calculate cell dimensions based on grid
+        cell_width = grid_width // layout["cols"]
+        cell_height = 180  # Adjusted for better spacing
+        
+        for i, speaker in enumerate(speakers):
+            row = i // layout["cols"]
+            col = i % layout["cols"]
+            
+            x = 60 + col * cell_width
+            y = start_y + row * cell_height
+            
+            # Add speaker with circular photo and credentials
+            await self._add_speaker_cell_template(poster, speaker, x, y, cell_width, cell_height)
+        
+        return poster
+    
+    async def _add_speaker_cell_template(self, poster: Image.Image, speaker: SpeakerInfo, x: int, y: int, width: int, height: int):
+        """Add individual speaker cell following your template format"""
+        draw = ImageDraw.Draw(poster)
+        
+        # Load fonts
+        font_service = await get_font_service()
+        name_font = font_service.get_title_font(22)
+        title_font = font_service.get_subtitle_font(18)
+        org_font = font_service.get_body_font(16)
+        
+        # Circular speaker photo at top center of cell
+        photo_size = 80
+        photo_x = x + width // 2 - photo_size // 2
+        photo_y = y + 10
+        
+        # Get speaker photo from WordPress media
+        photo_url = await self._get_speaker_photo_optimized(speaker)
+        
+        if photo_url:
+            try:
+                photo = await self._download_image(photo_url)
+                photo = self._resize_to_circle(photo, photo_size)
+                poster.paste(photo, (photo_x, photo_y), photo)
+                print(f"Added photo for {speaker.name}")
+            except Exception as e:
+                print(f"Failed to load photo for {speaker.name}: {e}")
+                # Draw placeholder circle
+                draw.ellipse([photo_x, photo_y, photo_x + photo_size, photo_y + photo_size], 
+                           fill=self.colors["secondary"])
+        else:
+            # Draw placeholder circle - keep empty as requested
+            print(f"No photo found for {speaker.name} - leaving circle area empty")
+        
+        # Speaker credentials below photo
+        text_y = photo_y + photo_size + 15
+        text_center_x = x + width // 2
+        
+        # 1. Speaker name
+        name_lines = self._wrap_text(speaker.name, name_font, width - 20)
+        for line in name_lines[:2]:  # Max 2 lines for name
+            line_bbox = draw.textbbox((0, 0), line, font=name_font)
+            line_width = line_bbox[2] - line_bbox[0]
+            # Draw with shadow for visibility
+            draw.text((text_center_x - line_width // 2 + 1, text_y + 1), line, fill="black", font=name_font)
+            draw.text((text_center_x - line_width // 2, text_y), line, fill="white", font=name_font)
+            text_y += 25
+        
+        # 2. Speaker title (Managing Director, etc.)
+        if speaker.title and text_y < y + height - 40:
+            title_lines = self._wrap_text(speaker.title, title_font, width - 20)
+            for line in title_lines[:1]:  # Max 1 line for title
+                line_bbox = draw.textbbox((0, 0), line, font=title_font)
+                line_width = line_bbox[2] - line_bbox[0]
+                draw.text((text_center_x - line_width // 2 + 1, text_y + 1), line, fill="black", font=title_font)
+                draw.text((text_center_x - line_width // 2, text_y), line, fill="white", font=title_font)
+                text_y += 22
+        
+        # 3. Organization (CMT Association, Chartered Market, etc.)
+        if speaker.organization and text_y < y + height - 20:
+            org_lines = self._wrap_text(speaker.organization, org_font, width - 20)
+            for line in org_lines[:1]:  # Max 1 line for organization
+                line_bbox = draw.textbbox((0, 0), line, font=org_font)
+                line_width = line_bbox[2] - line_bbox[0]
+                draw.text((text_center_x - line_width // 2 + 1, text_y + 1), line, fill="black", font=org_font)
+                draw.text((text_center_x - line_width // 2, text_y), line, fill="white", font=org_font)
+    
     async def _add_speakers_grid(self, poster: Image.Image, speakers: List[SpeakerInfo]) -> Image.Image:
-        """Add speakers grid to poster"""
+        """Add speakers grid to poster (legacy method for non-template posters)"""
         if not speakers:
             return poster
         
@@ -679,6 +827,154 @@ class PosterComposer:
         event_string = f"{event_details.title}_{event_details.date}_{event_details.venue}"
         return hashlib.md5(event_string.encode()).hexdigest()[:12]
     
+    async def _validate_prerequisites(self, request: PosterGenerationRequest) -> List[str]:
+        """Validate all required resources exist before starting generation"""
+        errors = []
+        
+        try:
+            # Check landmark image exists
+            landmark_url = await self._get_landmark_image_optimized(
+                request.event_details.city, 
+                request.event_details.country
+            )
+            if not landmark_url:
+                errors.append(f"Landmark image not found for {request.event_details.city}, {request.event_details.country}")
+            
+            # Check overlay exists
+            overlay_url = await self._search_wordpress_media("overlay")
+            if not overlay_url:
+                errors.append("Branding overlay not found")
+            
+            # Check speaker photos (optional - just log warnings)
+            missing_speakers = []
+            for speaker in request.speakers:
+                photo_url = await self._get_speaker_photo_optimized(speaker)
+                if not photo_url:
+                    missing_speakers.append(speaker.name)
+            
+            if missing_speakers:
+                print(f"Warning: Missing photos for speakers: {', '.join(missing_speakers)}")
+            
+        except Exception as e:
+            errors.append(f"Validation error: {e}")
+        
+        return errors
+    
+    async def _get_landmark_image_optimized(self, city: str, country: str) -> Optional[str]:
+        """Optimized landmark image search with exact filename matching based on naming convention"""
+        try:
+            # Generate exact filename based on your naming convention:
+            # new-york-usa.jpg, kuala-lumpur-malaysia.jpg, mumbai-india.jpg
+            city_formatted = city.lower().replace(' ', '-')
+            country_formatted = country.lower().replace(' ', '-')
+            
+            # Primary search terms based on your examples
+            search_terms = [
+                f"{city_formatted}-{country_formatted}.jpg",
+                f"{city_formatted}-{country_formatted}.png"
+            ]
+            
+            # Additional variants for edge cases
+            if ' ' in city:
+                city_no_space = city.lower().replace(' ', '')
+                search_terms.extend([
+                    f"{city_no_space}-{country_formatted}.jpg",
+                    f"{city_no_space}-{country_formatted}.png"
+                ])
+            
+            print(f"Searching for landmark images: {search_terms}")
+            
+            # Batch search using optimized method
+            results = await self._search_wordpress_media_batch(search_terms)
+            
+            # Return first found
+            for term in search_terms:
+                if term in results:
+                    print(f"Found landmark: {results[term]}")
+                    return results[term]
+            
+            print(f"No landmark found for {city}, {country}. Expected format: {search_terms[0]}")
+            return None
+            
+        except Exception as e:
+            print(f"Error in optimized landmark search: {e}")
+            return None
+    
+    async def _get_speaker_photo_optimized(self, speaker: SpeakerInfo) -> Optional[str]:
+        """Enhanced speaker photo search with fallback"""
+        if speaker.photo_url:
+            return speaker.photo_url
+        
+        try:
+            # Generate search variants
+            name_parts = speaker.name.lower().split()
+            search_variants = [
+                "-".join(name_parts),
+                "_".join(name_parts),
+                "".join(name_parts),
+                name_parts[0] + "-" + name_parts[-1] if len(name_parts) > 1 else name_parts[0],
+                name_parts[-1] + "-" + name_parts[0] if len(name_parts) > 1 else name_parts[0]
+            ]
+            
+            # Add extensions
+            search_terms = []
+            for variant in search_variants:
+                search_terms.extend([f"{variant}.jpg", f"{variant}.png"])
+            
+            # Batch search
+            results = await self._search_wordpress_media_batch(search_terms)
+            
+            # Return first found
+            for term in search_terms:
+                if term in results:
+                    print(f"Found speaker photo for {speaker.name}: {results[term]}")
+                    return results[term]
+            
+            print(f"No photo found for speaker: {speaker.name}")
+            return None
+            
+        except Exception as e:
+            print(f"Error searching for speaker photo {speaker.name}: {e}")
+            return None
+    
+    async def _search_wordpress_media_batch(self, search_terms: List[str]) -> Dict[str, str]:
+        """Search for multiple media files in one batch request"""
+        try:
+            import httpx
+            
+            # Get all media at once and filter locally for better performance
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    "https://cmtpl.org/wp-json/wp/v2/media",
+                    params={
+                        "per_page": 100,  # Get more items at once
+                        "media_type": "image"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    media_items = response.json()
+                    results = {}
+                    
+                    for term in search_terms:
+                        for item in media_items:
+                            source_url = item.get("source_url", "").lower()
+                            filename = item.get("title", {}).get("rendered", "").lower()
+                            
+                            # Check if the exact filename matches
+                            if (term.lower() in source_url or 
+                                term.lower() in filename):
+                                results[term] = item.get("source_url")
+                                break
+                    
+                    return results
+                
+                return {}
+                
+        except Exception as e:
+            print(f"Batch media search failed: {e}")
+            return {}
+
     def _estimate_file_size(self, poster: Image.Image) -> int:
         """Estimate file size in bytes"""
         # Rough estimation based on image dimensions and format

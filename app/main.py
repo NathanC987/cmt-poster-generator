@@ -1,5 +1,6 @@
 import time
 import json
+import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Depends
@@ -23,6 +24,133 @@ start_time = time.time()
 
 # Store last received payload for debugging
 last_payload = {"timestamp": None, "data": None, "url": None}
+
+def extract_city_country(venue: str, title: str) -> tuple:
+    """Extract city and country from venue and title"""
+    venue_lower = venue.lower()
+    title_lower = title.lower()
+    
+    # City mappings based on common venue patterns
+    city_mappings = {
+        "kuala lumpur": ("Kuala Lumpur", "Malaysia"),
+        "kl": ("Kuala Lumpur", "Malaysia"),
+        "mumbai": ("Mumbai", "India"),
+        "vaswani": ("Mumbai", "India"),  # WeWork Vaswani Chambers
+        "bangalore": ("Bangalore", "India"),
+        "bengaluru": ("Bangalore", "India"),
+        "delhi": ("Delhi", "India"),
+        "gurgaon": ("Gurgaon", "India"),
+        "manila": ("Manila", "Philippines"),
+        "metro manila": ("Manila", "Philippines"),
+        "singapore": ("Singapore", "Singapore"),
+        "bangkok": ("Bangkok", "Thailand"),
+        "jakarta": ("Jakarta", "Indonesia"),
+        "hong kong": ("Hong Kong", "Hong Kong"),
+        "ho chi minh": ("Ho Chi Minh City", "Vietnam"),
+        "saigon": ("Ho Chi Minh City", "Vietnam"),
+        "hanoi": ("Hanoi", "Vietnam"),
+        "taipei": ("Taipei", "Taiwan"),
+        "seoul": ("Seoul", "South Korea"),
+        "tokyo": ("Tokyo", "Japan"),
+        "osaka": ("Osaka", "Japan"),
+        "sydney": ("Sydney", "Australia"),
+        "melbourne": ("Melbourne", "Australia"),
+        "auckland": ("Auckland", "New Zealand"),
+        "london": ("London", "UK"),
+        "new york": ("New York", "USA"),
+        "san francisco": ("San Francisco", "USA"),
+        "chicago": ("Chicago", "USA"),
+    }
+    
+    # Check venue first, then title
+    for key, (city, country) in city_mappings.items():
+        if key in venue_lower or key in title_lower:
+            return city, country
+    
+    # Default fallback
+    return "Manila", "Philippines"
+
+def parse_speakers_from_text(speakers_text: str, community_leader: str) -> List:
+    """Parse speakers from the Power Automate speakers text"""
+    from app.models.request_models import SpeakerInfo
+    import re
+    
+    speakers = []
+    
+    if not speakers_text:
+        return speakers
+    
+    # Look for LinkedIn URLs to extract speaker info
+    linkedin_pattern = r'https?://[^\s]*linkedin[^\s]*'
+    linkedin_matches = re.findall(linkedin_pattern, speakers_text)
+    
+    # Add community leader first
+    if community_leader:
+        speakers.append(SpeakerInfo(
+            name=community_leader,
+            bio="Community Leader",
+            title="Community Leader",
+            organization="CMT Association",
+            linkedin_url=linkedin_matches[0] if linkedin_matches else None,
+            photo_url=None
+        ))
+    
+    # Enhanced speaker name extraction
+    # Look for patterns like "Joel Pannikot, the Managing Director at Chartered Market"
+    name_patterns = [
+        r'^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:,|\s+(?:the|is|was))',  # "Joel Pannikot, the" or "Joel Pannikot is"
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s+(?:boasts|has|brings))',  # "Joel Pannikot boasts"
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:\s+continues)',  # "Joel Pannikot continues"
+    ]
+    
+    lines = speakers_text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Try each pattern to extract speaker name
+        for pattern in name_patterns:
+            name_match = re.search(pattern, line)
+            if name_match:
+                speaker_name = name_match.group(1).strip()
+                
+                # Skip if it's the community leader (already added)
+                if speaker_name == community_leader:
+                    continue
+                
+                # Extract title and organization if possible
+                title = "Speaker"
+                organization = ""
+                
+                # Look for title patterns
+                if "managing director" in line.lower():
+                    title = "Managing Director"
+                elif "director" in line.lower():
+                    title = "Director"
+                elif "manager" in line.lower():
+                    title = "Manager"
+                elif "ceo" in line.lower():
+                    title = "CEO"
+                elif "strategist" in line.lower():
+                    title = "Strategist"
+                
+                # Look for organization patterns
+                org_match = re.search(r'at\s+([A-Z][^,\.\n]+)', line)
+                if org_match:
+                    organization = org_match.group(1).strip()
+                
+                speakers.append(SpeakerInfo(
+                    name=speaker_name,
+                    bio=line.strip(),
+                    title=title,
+                    organization=organization,
+                    linkedin_url=linkedin_matches[0] if linkedin_matches else None,
+                    photo_url=None
+                ))
+                break  # Found a match, move to next line
+    
+    return speakers
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -58,6 +186,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Timeout middleware for preventing 502 errors
+@app.middleware("http")
+async def timeout_middleware(request: Request, call_next):
+    """Add timeout protection to prevent 502 errors"""
+    start_time_req = time.time()
+    
+    try:
+        # Set a 25-second timeout (5 seconds buffer for Render's 30s limit)
+        response = await asyncio.wait_for(call_next(request), timeout=25.0)
+        return response
+    except asyncio.TimeoutError:
+        process_time = time.time() - start_time_req
+        print(f"Request to {request.url.path} timed out after {process_time:.4f} seconds")
+        return JSONResponse(
+            status_code=408,
+            content={
+                "success": False,
+                "error_code": "TIMEOUT",
+                "message": "Request timed out. Please try again or contact support if this persists.",
+                "generation_time": process_time
+            }
+        )
 
 # Request logging middleware
 @app.middleware("http")
@@ -192,27 +343,8 @@ async def generate_posters_power_automate(request: PowerAutomateRequest):
         # Convert Power Automate format to internal format
         from app.models.request_models import EventDetails, SpeakerInfo, PosterGenerationRequest
         
-        # Extract city and country from venue
-        # For "Metro Manila" -> city: "Manila", country: "Philippines"  
-        # For "WeWork Vaswani Chambers" -> city: "Mumbai", country: "India" (need to parse or map)
-        venue_parts = request.venue.lower()
-        
-        # Simple venue mapping - you can extend this
-        city = "Manila"  # Default
-        country = "Philippines"  # Default
-        
-        if "mumbai" in venue_parts or "vaswani" in venue_parts:
-            city = "Mumbai"
-            country = "India"
-        elif "bangalore" in venue_parts or "bengaluru" in venue_parts:
-            city = "Bangalore"
-            country = "India"
-        elif "delhi" in venue_parts or "gurgaon" in venue_parts:
-            city = "Delhi"
-            country = "India"
-        elif "manila" in venue_parts or "metro manila" in request.title.lower():
-            city = "Manila"
-            country = "Philippines"
+        # Extract city and country from venue and title
+        city, country = extract_city_country(request.venue, request.title)
         
         # Create event details
         event_details = EventDetails(
@@ -227,46 +359,7 @@ async def generate_posters_power_automate(request: PowerAutomateRequest):
         )
         
         # Parse speakers from text
-        speakers = []
-        if request.speakers:
-            # Extract speaker info from text - simple parsing
-            speaker_text = request.speakers
-            
-            # Look for LinkedIn URLs to extract speaker info
-            import re
-            linkedin_pattern = r'https?://[^\s]*linkedin[^\s]*'
-            linkedin_matches = re.findall(linkedin_pattern, speaker_text)
-            
-            # For now, create one speaker with community leader info
-            if request.community_leader:
-                speakers.append(SpeakerInfo(
-                    name=request.community_leader,
-                    bio="Community Leader",
-                    title="Community Leader",
-                    organization="CMT Association",
-                    linkedin_url=linkedin_matches[0] if linkedin_matches else None,
-                    photo_url=None
-                ))
-            
-            # Try to extract speaker names from the speaker text
-            # This is a simple implementation - you can enhance it
-            lines = speaker_text.split('\n')
-            for line in lines:
-                if any(keyword in line.lower() for keyword in ['director', 'manager', 'ceo', 'strategist']):
-                    # Try to extract name (first sentence before comma or period)
-                    name_match = re.match(r'^([^,\.]+)', line.strip())
-                    if name_match and len(name_match.group(1).split()) >= 2:
-                        name = name_match.group(1).strip()
-                        if name != request.community_leader:  # Don't duplicate
-                            speakers.append(SpeakerInfo(
-                                name=name,
-                                bio=line.strip(),
-                                title="Speaker",
-                                organization="",
-                                linkedin_url=linkedin_matches[0] if linkedin_matches else None,
-                                photo_url=None
-                            ))
-                            break  # Only add one speaker for now
+        speakers = parse_speakers_from_text(request.speakers, request.community_leader)
         
         # Create poster generation request
         poster_request = PosterGenerationRequest(
