@@ -346,16 +346,17 @@ async def detailed_health_check():
         "dependencies": dependencies
     }
 
-@app.post("/generate-posters", response_model=PosterGenerationResponse, dependencies=[Depends(check_rate_limit)])
+@app.post("/generate-posters", response_model=PosterGenerationResponse)
 async def generate_posters_power_automate(request: PowerAutomateRequest):
     """Power Automate poster generation endpoint (handles direct payload format)"""
     start_time_req = time.time()
     errors = []
     
     print(f"=== POSTER GENERATION STARTED ===")
-    print(f"Request: {request.title}")
+    print(f"Request received: {request.title}")
     print(f"Venue: {request.venue}")
     print(f"Community Leader: {request.community_leader}")
+    print(f"Timestamp: {datetime.now()}")
     
     try:
         # Convert Power Automate format to internal format

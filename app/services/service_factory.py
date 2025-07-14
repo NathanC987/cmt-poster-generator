@@ -99,12 +99,48 @@ def get_storage() -> BaseStorage:
 
 async def initialize_services():
     """Initialize all services"""
+    print("=== INITIALIZING SERVICES ===")
+    
+    print("1. Initializing image generator...")
     image_gen = get_image_generator()
     if image_gen:
+        print("Image generator found, initializing...")
         await image_gen.initialize()
-    await get_text_processor().initialize()
-    await get_rate_limiter().initialize()
-    await get_storage().initialize()
+        print("Image generator initialized successfully")
+    else:
+        print("No image generator configured (skipping)")
+    
+    print("2. Initializing text processor...")
+    try:
+        text_proc = get_text_processor()
+        print("Text processor created, initializing...")
+        await text_proc.initialize()
+        print("Text processor initialized successfully")
+    except Exception as e:
+        print(f"Text processor initialization failed: {e}")
+        print("Continuing without text processor...")
+    
+    print("3. Initializing rate limiter...")
+    try:
+        rate_limiter = get_rate_limiter()
+        print("Rate limiter created, initializing...")
+        await rate_limiter.initialize()
+        print("Rate limiter initialized successfully")
+    except Exception as e:
+        print(f"Rate limiter initialization failed: {e}")
+        print("Continuing with memory fallback...")
+    
+    print("4. Initializing storage...")
+    try:
+        storage = get_storage()
+        print("Storage created, initializing...")
+        await storage.initialize()
+        print("Storage initialized successfully")
+    except Exception as e:
+        print(f"Storage initialization failed: {e}")
+        print("Continuing with fallback storage...")
+    
+    print("=== SERVICE INITIALIZATION COMPLETE ===")
 
 async def cleanup_services():
     """Cleanup all services"""
