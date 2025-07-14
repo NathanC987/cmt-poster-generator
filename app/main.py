@@ -306,7 +306,21 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with service status"""
+    """Simple health check endpoint"""
+    current_time = datetime.now()
+    uptime = time.time() - start_time
+    
+    return {
+        "status": "healthy",
+        "timestamp": current_time.isoformat(),
+        "version": settings.API_VERSION,
+        "uptime": uptime,
+        "message": "CMT Poster Generator is running"
+    }
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """Detailed health check endpoint with service status"""
     current_time = datetime.now()
     uptime = time.time() - start_time
     
@@ -337,13 +351,21 @@ async def generate_posters_power_automate(request: PowerAutomateRequest):
     start_time_req = time.time()
     errors = []
     
+    print(f"=== POSTER GENERATION STARTED ===")
+    print(f"Request: {request.title}")
+    print(f"Venue: {request.venue}")
+    print(f"Community Leader: {request.community_leader}")
+    
     try:
         # Convert Power Automate format to internal format
         from app.models.request_models import EventDetails, SpeakerInfo, PosterGenerationRequest
         
+        print("Step 1: Extracting city and country...")
         # Extract city and country from venue and title
         city, country = extract_city_country(request.venue, request.title)
+        print(f"Extracted: {city}, {country}")
         
+        print("Step 2: Creating event details...")
         # Create event details
         event_details = EventDetails(
             title=request.title,
@@ -356,24 +378,32 @@ async def generate_posters_power_automate(request: PowerAutomateRequest):
             registration_url=None
         )
         
+        print("Step 3: Parsing speakers...")
         # Parse speakers from text
         speakers = parse_speakers_from_text(request.speakers, request.community_leader)
+        print(f"Found {len(speakers)} speakers: {[s.name for s in speakers]}")
         
+        print("Step 4: Creating poster request...")
         # Create poster generation request
         poster_request = PosterGenerationRequest(
             event_details=event_details,
             speakers=speakers,
-            poster_types=["general"]  # Default to general poster
+            poster_types=["general"]  # Only general poster for speed
         )
         
+        print("Step 5: Initializing poster composer...")
         # Initialize poster composer
         composer = PosterComposer()
         
+        print("Step 6: Starting poster generation...")
         # Generate posters
         posters = await composer.generate_posters(poster_request)
         
         generation_time = time.time() - start_time_req
         event_id = composer._generate_event_id(event_details)
+        
+        print(f"=== POSTER GENERATION COMPLETED ===")
+        print(f"Generated {len(posters)} posters in {generation_time:.2f} seconds")
         
         return PosterGenerationResponse(
             success=True,
@@ -389,6 +419,11 @@ async def generate_posters_power_automate(request: PowerAutomateRequest):
         generation_time = time.time() - start_time_req
         error_msg = str(e)
         errors.append(error_msg)
+        
+        print(f"=== POSTER GENERATION FAILED ===")
+        print(f"Error: {error_msg}")
+        import traceback
+        traceback.print_exc()
         
         return PosterGenerationResponse(
             success=False,
@@ -450,6 +485,12 @@ async def generate_posters_structured(request: PosterGenerationRequest):
 
 # Removed unused endpoints - landmarks and process-text
 # These are not needed for the core poster generation flow
+
+@app.post("/test-simple")
+async def test_simple():
+    """Ultra-simple test endpoint"""
+    print("TEST SIMPLE ENDPOINT CALLED")
+    return {"status": "success", "message": "Simple test works", "timestamp": datetime.now().isoformat()}
 
 @app.post("/debug-payload")
 async def debug_payload(request: Request):

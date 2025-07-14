@@ -33,55 +33,38 @@ class PosterComposer:
         }
     
     async def generate_posters(self, request: PosterGenerationRequest) -> List[Dict[str, Any]]:
-        """Generate all requested poster types with fast-fail validation"""
+        """Generate only general poster for fast, reliable processing"""
         posters = []
         event_id = self._generate_event_id(request.event_details)
         
-        # Fast validation of prerequisites
-        validation_errors = await self._validate_prerequisites(request)
-        if validation_errors:
-            print(f"Validation errors found: {validation_errors}")
-            # Continue with generation but log warnings
+        print(f"Starting poster generation for event: {request.event_details.title}")
+        
+        try:
+            # Get landmark background (optimized search)
+            print(f"Searching for landmark: {request.event_details.city}, {request.event_details.country}")
+            landmark_url = await self._get_landmark_image_optimized(
+                request.event_details.city,
+                request.event_details.country
+            )
             
-        # Get landmark background (optimized search)
-        landmark_url = await self._get_landmark_image_optimized(
-            request.event_details.city,
-            request.event_details.country
-        )
-        
-        if not landmark_url:
-            print(f"Warning: No landmark found for {request.event_details.city}, {request.event_details.country}")
-            # Use a default background or continue without landmark
-        
-        # Generate different poster types
-        for poster_type in request.poster_types:
-            try:
-                if poster_type == "general":
-                    poster_info = await self._generate_general_poster(
-                        request, event_id, landmark_url
-                    )
-                elif poster_type == "speaker":
-                    # Generate one poster per speaker
-                    for speaker in request.speakers:
-                        poster_info = await self._generate_speaker_poster(
-                            request, speaker, event_id, landmark_url
-                        )
-                        posters.append(poster_info)
-                    continue
-                elif poster_type == "theme":
-                    poster_info = await self._generate_theme_poster(
-                        request, event_id, landmark_url
-                    )
-                else:
-                    print(f"Unknown poster type: {poster_type}")
-                    continue
-                
-                posters.append(poster_info)
-                
-            except Exception as e:
-                print(f"Error generating {poster_type} poster: {e}")
-                # Continue with other poster types
-                continue
+            if not landmark_url:
+                print(f"Warning: No landmark found for {request.event_details.city}, {request.event_details.country}")
+            else:
+                print(f"Found landmark: {landmark_url}")
+            
+            # Generate only the general poster (fast and reliable)
+            print("Generating general poster...")
+            poster_info = await self._generate_general_poster(
+                request, event_id, landmark_url
+            )
+            posters.append(poster_info)
+            print(f"General poster generated successfully: {poster_info['url']}")
+            
+        except Exception as e:
+            print(f"Error generating poster: {e}")
+            import traceback
+            traceback.print_exc()
+            raise e
         
         return posters
     
