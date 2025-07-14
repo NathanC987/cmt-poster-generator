@@ -256,3 +256,7 @@ async def generate_posters(payload: PowerAutomateRequest):
 @app.get("/")
 def root():
     return {"message": "CMT Poster Generator Minimal API", "status": "ok"}
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
