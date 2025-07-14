@@ -154,20 +154,12 @@ def parse_speakers_from_text(speakers_text: str, community_leader: str) -> List:
 async def lifespan(app: FastAPI):
     """Application lifespan management"""
     # Startup
-    try:
-        await initialize_services()
-        print("Services initialized successfully")
-    except Exception as e:
-        print(f"Failed to initialize services: {e}")
+    print("=== STARTUP: SKIPPING SERVICE INITIALIZATION FOR DEBUGGING ===")
     
     yield
     
     # Shutdown
-    try:
-        await cleanup_services()
-        print("Services cleaned up successfully")
-    except Exception as e:
-        print(f"Failed to cleanup services: {e}")
+    print("=== SHUTDOWN: CLEANING UP ===")
 
 app = FastAPI(
     title=settings.API_TITLE,
@@ -493,6 +485,25 @@ async def test_simple():
     """Ultra-simple test endpoint"""
     print("TEST SIMPLE ENDPOINT CALLED")
     return {"status": "success", "message": "Simple test works", "timestamp": datetime.now().isoformat()}
+
+@app.post("/test-raw")
+async def test_raw(request: Request):
+    """Test endpoint that bypasses all validation"""
+    print("=== TEST RAW ENDPOINT CALLED ===")
+    try:
+        body = await request.body()
+        print(f"Raw body length: {len(body)}")
+        print("Successfully received request")
+        return {"status": "success", "message": "Raw test works", "body_length": len(body)}
+    except Exception as e:
+        print(f"Error in test-raw: {e}")
+        return {"status": "error", "error": str(e)}
+
+@app.post("/test-model")
+async def test_model():
+    """Test endpoint to see if it reaches without model validation"""
+    print("=== TEST MODEL ENDPOINT CALLED ===")
+    return {"status": "success", "message": "Model test works"}
 
 @app.post("/debug-payload")
 async def debug_payload(request: Request):
