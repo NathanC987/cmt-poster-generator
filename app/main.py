@@ -5,7 +5,7 @@ import hashlib
 import httpx
 from datetime import datetime
 from typing import Optional, List
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 from PIL import Image, ImageDraw, ImageFont
 
@@ -38,7 +38,6 @@ class PowerAutomateRequest(BaseModel):
 app = FastAPI()
 
 def extract_city_country(venue: str) -> (str, str):
-    # Very simple extraction for demo; you can expand this
     parts = [p.strip() for p in venue.split(",")]
     if len(parts) >= 2:
         city = parts[-2].title()
@@ -61,7 +60,6 @@ async def get_wordpress_media_url(search_term: str, endswith: Optional[str] = No
     return None
 
 async def get_speaker_photo_url(speaker_name: str) -> Optional[str]:
-    # Try several variants for fuzzy matching
     variants = [
         speaker_name.lower().replace(" ", "-"),
         speaker_name.lower().replace(" ", "_"),
@@ -81,7 +79,14 @@ async def summarize_text(text: str, target_length: int = 200) -> str:
         api_version="2024-02-01",
         azure_endpoint=AZURE_OPENAI_ENDPOINT
     )
-    prompt = f"Summarize this for a poster in {target_length} characters:\n{text}\nSummary:"
+    prompt = (
+        f"Summarize the following event description for a poster. "
+        f"Focus on what the event is about and why it is being held. "
+        f"Do NOT include the date, time, venue, speaker names, or LinkedIn links. "
+        f"The summary should be concise, engaging, and suitable for a poster. "
+        f"Target length: {target_length} characters.\n\n"
+        f"Description:\n{text}\n\nSummary:"
+    )
     resp = await client.chat.completions.create(
         model=AZURE_OPENAI_DEPLOYMENT,
         messages=[{"role": "user", "content": prompt}],
@@ -89,6 +94,32 @@ async def summarize_text(text: str, target_length: int = 200) -> str:
         temperature=0.3
     )
     return resp.choices[0].message.content.strip()
+
+async def extract_speaker_credentials(speaker_bio: str) -> (str, str, str):
+    import openai
+    client = openai.AsyncAzureOpenAI(
+        api_key=AZURE_OPENAI_API_KEY,
+        api_version="2024-02-01",
+        azure_endpoint=AZURE_OPENAI_ENDPOINT
+    )
+    prompt = (
+        "From the following speaker bio, extract only the speaker's full name, designation/title, and organization in this format (each on a new line):\n\n"
+        "[Speaker Name]\n[Designation/Title]\n[Organization]\n\n"
+        "Bio:\n"
+        f"{speaker_bio}\n\n"
+        "Output:"
+    )
+    resp = await client.chat.completions.create(
+        model=AZURE_OPENAI_DEPLOYMENT,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=100,
+        temperature=0.1
+    )
+    lines = resp.choices[0].message.content.strip().splitlines()
+    name = lines[0].strip() if len(lines) > 0 else ""
+    title = lines[1].strip() if len(lines) > 1 else ""
+    org = lines[2].strip() if len(lines) > 2 else ""
+    return name, title, org
 
 def wrap_text(text, font, max_width):
     words = text.split()
@@ -153,6 +184,16 @@ def circle_crop(img, size):
     out.paste(img, (0, 0), mask)
     return out
 
+def get_speaker_circle_size(num_speakers: int) -> int:
+    if num_speakers == 1:
+        return 260
+    elif num_speakers == 2:
+        return 180
+    elif num_speakers == 3:
+        return 140
+    else:
+        return 110
+
 @app.post("/generate-posters")
 async def generate_posters(payload: PowerAutomateRequest):
     print("Received payload:", payload)
@@ -185,66 +226,82 @@ async def generate_posters(payload: PowerAutomateRequest):
     summary = await summarize_text(payload.description, 200)
     print("Summary:", summary)
 
-    # 4. Speaker extraction (very basic, can be improved)
+    # 4. Speaker extraction (improved for single speaker)
     speakers = []
     for line in payload.speakers.split("\n"):
         match = re.match(r"([A-Za-z ]+),\s*(.*)", line)
         if match:
             name = match.group(1).strip()
-            title_org = match.group(2).strip()
-            speakers.append({"name": name, "title_org": title_org})
+            bio = match.group(2).strip()
+            speakers.append({"bio": line.strip(), "name": name, "title_org": bio})
         elif line.strip():
-            speakers.append({"name": line.strip(), "title_org": ""})
+            speakers.append({"bio": line.strip(), "name": line.strip(), "title_org": ""})
     if not speakers and payload.community_leader:
-        speakers.append({"name": payload.community_leader, "title_org": "Community Leader"})
+        speakers.append({"bio": payload.community_leader, "name": payload.community_leader, "title_org": "Community Leader"})
 
-    # 5. Speaker photo(s)
+    # 5. Speaker photo(s) and credentials
     for speaker in speakers:
         speaker["photo_url"] = await get_speaker_photo_url(speaker["name"])
+        name, title, org = await extract_speaker_credentials(speaker["bio"])
+        speaker["name"] = name
+        speaker["title"] = title
+        speaker["org"] = org
 
     # 6. Compose poster
     draw = ImageDraw.Draw(poster)
-    title_font = ImageFont.truetype(FONT_PATH_BOLD, 60)
-    desc_font = ImageFont.truetype(FONT_PATH_REGULAR, 32)
-    cred_font = ImageFont.truetype(FONT_PATH_REGULAR, 28)
-    details_font = ImageFont.truetype(FONT_PATH_BOLD, 32)
+    # Margins
+    left_margin = 100
+    right_margin = 100
+    top_margin = 180
+    y = top_margin
 
-    y = 60
+    # Fonts (larger)
+    title_font = ImageFont.truetype(FONT_PATH_BOLD, 96)
+    desc_font = ImageFont.truetype(FONT_PATH_REGULAR, 48)
+    cred_font = ImageFont.truetype(FONT_PATH_REGULAR, 44)
+    details_font = ImageFont.truetype(FONT_PATH_BOLD, 48)
+
     # Title
-    for line in wrap_text(payload.title, title_font, POSTER_WIDTH - 120):
-        draw.text((60, y), line, font=title_font, fill="white")
-        y += 70
-    y += 10
-    # Description
-    for line in wrap_text(summary, desc_font, POSTER_WIDTH - 120):
-        draw.text((60, y), line, font=desc_font, fill="white")
-        y += 40
+    for line in wrap_text(payload.title, title_font, POSTER_WIDTH - left_margin - right_margin):
+        draw.text((left_margin, y), line, font=title_font, fill="white")
+        y += 110
     y += 30
 
-    # Speaker grid (only 1 for now)
+    # Description
+    for line in wrap_text(summary, desc_font, POSTER_WIDTH - left_margin - right_margin):
+        draw.text((left_margin, y), line, font=desc_font, fill="white")
+        y += 62
+    y += 60
+
+    # Speaker grid
+    num_speakers = len(speakers)
+    circle_size = get_speaker_circle_size(num_speakers)
     grid_y = y
-    grid_x = POSTER_WIDTH // 2 - 100
+    grid_x = (POSTER_WIDTH - (circle_size * num_speakers + 80 * (num_speakers - 1))) // 2
     for speaker in speakers:
         if speaker.get("photo_url"):
             photo = await download_image(speaker["photo_url"])
-            photo = circle_crop(photo, 120)
+            photo = circle_crop(photo, circle_size)
             poster.paste(photo, (grid_x, grid_y), photo)
         else:
-            # Draw placeholder
-            draw.ellipse([grid_x, grid_y, grid_x+120, grid_y+120], fill="#3498DB")
+            draw.ellipse([grid_x, grid_y, grid_x+circle_size, grid_y+circle_size], fill="#3498DB")
         # Credentials
-        cred_y = grid_y + 130
+        cred_y = grid_y + circle_size + 30
         draw.text((grid_x, cred_y), speaker["name"], font=cred_font, fill="white")
-        draw.text((grid_x, cred_y+32), speaker["title_org"], font=cred_font, fill="white")
-        grid_x += 200  # For multiple speakers, adjust grid_x/y
+        draw.text((grid_x, cred_y+50), speaker["title"], font=cred_font, fill="white")
+        draw.text((grid_x, cred_y+100), speaker["org"], font=cred_font, fill="white")
+        grid_x += circle_size + 80
+    y = grid_y + circle_size + 180
 
-    # Event details at bottom
-    details_y = POSTER_HEIGHT - 180
+    # Event details below speaker grid, with more space
+    details_y = y + 60
     date_str = payload.date.strftime("%B %d, %Y")
     venue_str = payload.venue
-    draw.text((60, details_y), f"📅 {date_str}", font=details_font, fill="white")
-    draw.text((60, details_y+40), f"🕐 {payload.time}", font=details_font, fill="white")
-    draw.text((60, details_y+80), f"📍 {venue_str}", font=details_font, fill="white")
+    # Use a uniform, formal icon for all details
+    icon = "●"
+    draw.text((left_margin, details_y), f"{icon}  {date_str}", font=details_font, fill="white")
+    draw.text((left_margin, details_y+70), f"{icon}  {payload.time}", font=details_font, fill="white")
+    draw.text((left_margin, details_y+140), f"{icon}  {venue_str}", font=details_font, fill="white")
 
     # 7. Upload to WordPress
     filename = f"poster-{city_slug}-{country_slug}-{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
@@ -253,10 +310,10 @@ async def generate_posters(payload: PowerAutomateRequest):
 
     return {"success": True, "poster_url": poster_url}
 
-@app.get("/")
-def root():
-    return {"message": "CMT Poster Generator Minimal API", "status": "ok"}
-
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/")
+def root():
+    return {"message": "CMT Poster Generator Minimal API", "status": "ok"}
