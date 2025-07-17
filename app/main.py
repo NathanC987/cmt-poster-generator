@@ -1,7 +1,6 @@
 import io
 import os
 import re
-import hashlib
 import httpx
 from datetime import datetime
 from typing import Optional, List
@@ -186,13 +185,13 @@ def circle_crop(img, size):
 
 def get_speaker_circle_size(num_speakers: int) -> int:
     if num_speakers == 1:
-        return 260
+        return 280
     elif num_speakers == 2:
-        return 180
+        return 200
     elif num_speakers == 3:
-        return 140
+        return 150
     else:
-        return 110
+        return 120
 
 @app.post("/generate-posters")
 async def generate_posters(payload: PowerAutomateRequest):
@@ -250,34 +249,34 @@ async def generate_posters(payload: PowerAutomateRequest):
     # 6. Compose poster
     draw = ImageDraw.Draw(poster)
     # Margins
-    left_margin = 100
-    right_margin = 100
-    top_margin = 180
+    left_margin = 120
+    right_margin = 120
+    top_margin = 220
     y = top_margin
 
     # Fonts (larger)
-    title_font = ImageFont.truetype(FONT_PATH_BOLD, 96)
-    desc_font = ImageFont.truetype(FONT_PATH_REGULAR, 48)
-    cred_font = ImageFont.truetype(FONT_PATH_REGULAR, 44)
-    details_font = ImageFont.truetype(FONT_PATH_BOLD, 48)
+    title_font = ImageFont.truetype(FONT_PATH_BOLD, 110)
+    desc_font = ImageFont.truetype(FONT_PATH_REGULAR, 56)
+    cred_font = ImageFont.truetype(FONT_PATH_REGULAR, 54)
+    details_font = ImageFont.truetype(FONT_PATH_BOLD, 60)
 
     # Title
     for line in wrap_text(payload.title, title_font, POSTER_WIDTH - left_margin - right_margin):
         draw.text((left_margin, y), line, font=title_font, fill="white")
-        y += 110
-    y += 30
+        y += 130
+    y += 40
 
     # Description
     for line in wrap_text(summary, desc_font, POSTER_WIDTH - left_margin - right_margin):
         draw.text((left_margin, y), line, font=desc_font, fill="white")
-        y += 62
-    y += 60
+        y += 74
+    y += 80
 
     # Speaker grid
     num_speakers = len(speakers)
     circle_size = get_speaker_circle_size(num_speakers)
     grid_y = y
-    grid_x = (POSTER_WIDTH - (circle_size * num_speakers + 80 * (num_speakers - 1))) // 2
+    grid_x = (POSTER_WIDTH - (circle_size * num_speakers + 100 * (num_speakers - 1))) // 2
     for speaker in speakers:
         if speaker.get("photo_url"):
             photo = await download_image(speaker["photo_url"])
@@ -286,22 +285,22 @@ async def generate_posters(payload: PowerAutomateRequest):
         else:
             draw.ellipse([grid_x, grid_y, grid_x+circle_size, grid_y+circle_size], fill="#3498DB")
         # Credentials
-        cred_y = grid_y + circle_size + 30
+        cred_y = grid_y + circle_size + 40
         draw.text((grid_x, cred_y), speaker["name"], font=cred_font, fill="white")
-        draw.text((grid_x, cred_y+50), speaker["title"], font=cred_font, fill="white")
-        draw.text((grid_x, cred_y+100), speaker["org"], font=cred_font, fill="white")
-        grid_x += circle_size + 80
-    y = grid_y + circle_size + 180
+        draw.text((grid_x, cred_y+60), speaker["title"], font=cred_font, fill="white")
+        draw.text((grid_x, cred_y+120), speaker["org"], font=cred_font, fill="white")
+        grid_x += circle_size + 100
+    y = grid_y + circle_size + 220
 
     # Event details below speaker grid, with more space
-    details_y = y + 60
+    details_y = y + 80
     date_str = payload.date.strftime("%B %d, %Y")
     venue_str = payload.venue
     # Use a uniform, formal icon for all details
     icon = "●"
     draw.text((left_margin, details_y), f"{icon}  {date_str}", font=details_font, fill="white")
-    draw.text((left_margin, details_y+70), f"{icon}  {payload.time}", font=details_font, fill="white")
-    draw.text((left_margin, details_y+140), f"{icon}  {venue_str}", font=details_font, fill="white")
+    draw.text((left_margin, details_y+90), f"{icon}  {payload.time}", font=details_font, fill="white")
+    draw.text((left_margin, details_y+180), f"{icon}  {venue_str}", font=details_font, fill="white")
 
     # 7. Upload to WordPress
     filename = f"poster-{city_slug}-{country_slug}-{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
