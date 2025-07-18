@@ -73,18 +73,18 @@ class PosterComposer:
         # Create base poster (landmark + overlay)
         poster = await self._create_base_poster(landmark_url)
 
-        # Improved Margins and Font Sizes
+        # Improved Margins and Font Sizes (even larger top margin)
         left_margin = 120
         right_margin = 120
-        top_margin = 220
+        top_margin = 300
         y = top_margin
 
-        # Larger fonts
+        # Even larger fonts for less empty space
         font_service = await get_font_service()
-        title_font = font_service.get_title_font(110)
-        desc_font = font_service.get_body_font(56)
-        cred_font = font_service.get_body_font(54)
-        details_font = font_service.get_title_font(60)
+        title_font = font_service.get_title_font(130)
+        desc_font = font_service.get_body_font(70)
+        cred_font = font_service.get_body_font(62)
+        details_font = font_service.get_title_font(72)
 
         draw = ImageDraw.Draw(poster)
 
