@@ -73,6 +73,25 @@ class AzureOpenAITextProcessor(BaseTextProcessor):
             return name, title, org
         except Exception as e:
             raise Exception(f"Failed to extract speaker credentials: {str(e)}")
+
+    async def generate_poster_caption(self, event_details: dict, poster_type: str) -> str:
+        """Generate caption for poster based on event details"""
+        prompt = self._create_caption_prompt(event_details, poster_type)
+        if not self.is_initialized():
+            await self.initialize()
+        try:
+            response = await self.client.chat.completions.create(
+                model=settings.AZURE_OPENAI_DEPLOYMENT,
+                messages=[
+                    {"role": "system", "content": "You are a marketing copywriter specializing in professional event promotion."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200,
+                temperature=0.4
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            raise Exception(f"Failed to generate poster caption: {str(e)}")
     
     def _create_summary_prompt(self, text: str, target_length: int, style: str) -> str:
         """Create improved prompt for event description summarization"""
