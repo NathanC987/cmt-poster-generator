@@ -22,13 +22,11 @@ class AzureOpenAITextProcessor(BaseTextProcessor):
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT
         )
     
-    async def summarize_text(self, text: str, target_length: int, style: str = "professional") -> str:
+    async def summarize_text(self, text: str, target_length: int, style: str = "professional", prompt_override: str = None) -> str:
         """Summarize text to target length using Azure OpenAI"""
         if not self.is_initialized():
             await self.initialize()
-        
-        prompt = self._create_summary_prompt(text, target_length, style)
-        
+        prompt = prompt_override or self._create_summary_prompt(text, target_length, style)
         try:
             response = await self.client.chat.completions.create(
                 model=settings.AZURE_OPENAI_DEPLOYMENT,
@@ -39,9 +37,7 @@ class AzureOpenAITextProcessor(BaseTextProcessor):
                 max_tokens=target_length + 50,
                 temperature=0.3
             )
-            
             return response.choices[0].message.content.strip()
-            
         except Exception as e:
             raise Exception(f"Failed to summarize text: {str(e)}")
     
