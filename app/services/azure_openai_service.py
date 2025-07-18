@@ -45,55 +45,45 @@ class AzureOpenAITextProcessor(BaseTextProcessor):
         except Exception as e:
             raise Exception(f"Failed to summarize text: {str(e)}")
     
-    async def generate_poster_caption(self, event_details: Dict[str, Any], poster_type: str) -> str:
-        """Generate caption for poster based on event details"""
+    async def extract_speaker_credentials(self, speaker_bio: str, prompt_override: str = None) -> (str, str, str):
+        """Extract speaker credentials (name, designation/title, organization) using Azure OpenAI"""
         if not self.is_initialized():
             await self.initialize()
         
-        prompt = self._create_caption_prompt(event_details, poster_type)
+        prompt = prompt_override or (
+            "From the following speaker bio, extract only the speaker's full name, designation/title, and organization in this format (each on a new line):\n\n"
+            "[Speaker Name]\n[Designation/Title]\n[Organization]\n\n"
+            f"Bio:\n{speaker_bio}\n\nOutput:"
+        )
         
         try:
             response = await self.client.chat.completions.create(
                 model=settings.AZURE_OPENAI_DEPLOYMENT,
                 messages=[
-                    {"role": "system", "content": "You are a marketing copywriter specializing in professional event promotion."},
+                    {"role": "system", "content": "You are a professional assistant for event marketing posters."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=200,
-                temperature=0.4
+                max_tokens=100,
+                temperature=0.1
             )
-            
-            return response.choices[0].message.content.strip()
-            
+            lines = response.choices[0].message.content.strip().splitlines()
+            name = lines[0].strip() if len(lines) > 0 else ""
+            title = lines[1].strip() if len(lines) > 1 else ""
+            org = lines[2].strip() if len(lines) > 2 else ""
+            return name, title, org
         except Exception as e:
-            raise Exception(f"Failed to generate poster caption: {str(e)}")
+            raise Exception(f"Failed to extract speaker credentials: {str(e)}")
     
     def _create_summary_prompt(self, text: str, target_length: int, style: str) -> str:
-        """Create prompt for text summarization"""
-        style_instructions = {
-            "professional": "formal, business-appropriate language",
-            "casual": "friendly, conversational tone",
-            "academic": "scholarly, detailed language",
-            "marketing": "engaging, persuasive language"
-        }
-        
-        style_instruction = style_instructions.get(style, style_instructions["professional"])
-        
-        prompt = f"""
-        Please summarize the following text to approximately {target_length} characters using {style_instruction}.
-        
-        Requirements:
-        - Keep the key information and main points
-        - Maintain clarity and readability
-        - Use appropriate tone for {style} style
-        - Target length: {target_length} characters (flexible by ±20%)
-        
-        Text to summarize:
-        {text}
-        
-        Summary:
-        """
-        
+        """Create improved prompt for event description summarization"""
+        prompt = (
+            f"Summarize the following event description for a poster. "
+            f"Focus on what the event is about and why it is being held. "
+            f"Do NOT include the date, time, venue, speaker names, or LinkedIn links. "
+            f"The summary should be concise, engaging, and suitable for a poster. "
+            f"Target length: {target_length} characters.\n\n"
+            f"Description:\n{text}\n\nSummary:"
+        )
         return prompt
     
     def _create_caption_prompt(self, event_details: Dict[str, Any], poster_type: str) -> str:

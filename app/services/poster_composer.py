@@ -69,28 +69,93 @@ class PosterComposer:
         return posters
     
     async def _generate_general_poster(self, request: PosterGenerationRequest, event_id: str, landmark_url: str) -> Dict[str, Any]:
-        """Generate general overview poster following the exact template layout"""
+        """Generate general overview poster following the improved template layout"""
         # Create base poster (landmark + overlay)
         poster = await self._create_base_poster(landmark_url)
-        
-        # Template Layout:
-        # 1. Title at top (big and bold)
-        # 2. Summarized description below title  
-        # 3. Speaker grid with circular photos and credentials
-        # 4. Event details at bottom (date, time, venue)
-        
-        # Add event information (title + description)
-        poster = await self._add_event_info(poster, request.event_details, "general")
-        
-        # Add speakers grid with circular photos and credentials
-        poster = await self._add_speakers_grid_template(poster, request.speakers)
-        
-        # Add event details at bottom (date, time, venue)
-        poster = await self._add_event_details_bottom(poster, request.event_details)
-        
+
+        # Improved Margins and Font Sizes
+        left_margin = 120
+        right_margin = 120
+        top_margin = 220
+        y = top_margin
+
+        # Larger fonts
+        font_service = await get_font_service()
+        title_font = font_service.get_title_font(110)
+        desc_font = font_service.get_body_font(56)
+        cred_font = font_service.get_body_font(54)
+        details_font = font_service.get_title_font(60)
+
+        draw = ImageDraw.Draw(poster)
+
+        # Title
+        for line in self._wrap_text(request.event_details.title, title_font, self.poster_width - left_margin - right_margin):
+            draw.text((left_margin, y), line, font=title_font, fill="white")
+            y += 130
+        y += 40
+
+        # Summarized description (using improved OpenAI prompt)
+        summary = await self.text_processor.summarize_text(
+            request.event_details.description,
+            200,
+            prompt_override=(
+                "Summarize the following event description for a poster. "
+                "Focus on what the event is about and why it is being held. "
+                "Do NOT include the date, time, venue, speaker names, or LinkedIn links. "
+                "The summary should be concise, engaging, and suitable for a poster. "
+                "Target length: 200 characters.\n\n"
+                f"Description:\n{request.event_details.description}\n\nSummary:"
+            )
+        )
+        for line in self._wrap_text(summary, desc_font, self.poster_width - left_margin - right_margin):
+            draw.text((left_margin, y), line, font=desc_font, fill="white")
+            y += 74
+        y += 80
+
+        # Speaker grid (dynamic circle size)
+        num_speakers = len(request.speakers)
+        circle_size = 280 if num_speakers == 1 else 200 if num_speakers == 2 else 150 if num_speakers == 3 else 120
+        grid_y = y
+        grid_x = (self.poster_width - (circle_size * num_speakers + 100 * (num_speakers - 1))) // 2
+
+        for speaker in request.speakers:
+            # Get speaker photo
+            photo_url = await self._get_speaker_photo_optimized(speaker)
+            if photo_url:
+                photo = await self._download_image(photo_url)
+                photo = self._resize_to_circle(photo, circle_size)
+                poster.paste(photo, (grid_x, grid_y), photo)
+            else:
+                draw.ellipse([grid_x, grid_y, grid_x+circle_size, grid_y+circle_size], fill="#3498DB")
+
+            # Extract credentials using improved OpenAI prompt
+            name, title, org = await self.text_processor.extract_speaker_credentials(
+                speaker.bio,
+                prompt_override=(
+                    "From the following speaker bio, extract only the speaker's full name, designation/title, and organization in this format (each on a new line):\n\n"
+                    "[Speaker Name]\n[Designation/Title]\n[Organization]\n\n"
+                    f"Bio:\n{speaker.bio}\n\nOutput:"
+                )
+            )
+            cred_y = grid_y + circle_size + 40
+            draw.text((grid_x, cred_y), name, font=cred_font, fill="white")
+            draw.text((grid_x, cred_y+60), title, font=cred_font, fill="white")
+            draw.text((grid_x, cred_y+120), org, font=cred_font, fill="white")
+            grid_x += circle_size + 100
+        y = grid_y + circle_size + 220
+
+        # Event details below speaker grid, with more space
+        details_y = y + 80
+        date_str = request.event_details.date.strftime("%B %d, %Y")
+        venue_str = request.event_details.venue
+        icon = "●"
+        draw.text((left_margin, details_y), f"{icon}  {date_str}", font=details_font, fill="white")
+        draw.text((left_margin, details_y+90), f"{icon}  {request.event_details.date.strftime('%I:%M %p')}", font=details_font, fill="white")
+        draw.text((left_margin, details_y+180), f"{icon}  {venue_str}", font=details_font, fill="white")
+
         # Save poster to WordPress media
         poster_url = await self._save_poster(poster, event_id, "general")
-        
+
         return {
             "poster_type": "general",
             "url": poster_url,
