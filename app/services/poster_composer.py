@@ -80,7 +80,7 @@ class PosterComposer:
         y = top_margin
 
         # Even larger fonts for less empty space
-        font_service = await get_font_service()
+        font_service = get_font_service()
         title_font = font_service.get_title_font(130)
         desc_font = font_service.get_body_font(70)
         cred_font = font_service.get_body_font(62)
