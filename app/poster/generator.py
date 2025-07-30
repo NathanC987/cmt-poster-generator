@@ -32,16 +32,33 @@ class PosterGenerator:
                 speaker_names.append(name)
 
         async def find_speaker_photo(name):
-            # Try several variants for best match
-            variants = set()
+            # Try several variants for best match, including first name only, ignore case, and missing middle names
+            import re
             base = name.strip()
+            # Remove extra spaces and punctuation
+            base_clean = re.sub(r'[^a-zA-Z0-9 ]', '', base)
+            parts = base_clean.split()
+            first = parts[0] if parts else base_clean
+            last = parts[-1] if len(parts) > 1 else ''
+            variants = set()
+            # Full name variants
             variants.add(base)
             variants.add(base.lower())
+            variants.add(base.upper())
             variants.add(base.replace(" ", "-").lower())
             variants.add(base.replace(" ", "_").lower())
             variants.add(base.replace(" ", ""))
-            variants.add(base.replace(" ", "-").replace("_", "-").lower())
-            variants.add(base.replace(" ", "_").replace("-", "_").lower())
+            # First name only
+            variants.add(first)
+            variants.add(first.lower())
+            variants.add(first.upper())
+            # First + last (skip middle)
+            if first and last and first != last:
+                variants.add(f"{first} {last}")
+                variants.add(f"{first.lower()} {last.lower()}")
+                variants.add(f"{first}{last}")
+                variants.add(f"{first.lower()}{last.lower()}")
+            # Try all variants
             for variant in variants:
                 photo = await self.wp.search_media(variant)
                 if photo:
@@ -58,7 +75,8 @@ class PosterGenerator:
             norm_date = parsed_date.strftime("%Y-%m-%d")
         except Exception:
             norm_date = raw_date
-        event_details = await self.openai.format_event_details(norm_date, payload.get("time", ""), payload.get("venue", ""))
+        # Use ' / ' as separator for event details to avoid comma issues
+        event_details = await self.openai.format_event_details(norm_date, payload.get("time", ""), payload.get("venue", ""), separator=" / ")
         summary = await self.openai.summarize_description(payload.get("description", ""))
         credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
         # 5. Compose poster
@@ -186,23 +204,34 @@ class PosterGenerator:
         import re as _re
         # Try to extract date, time, venue from event_details
         details_lines = []
-        # If event_details is a single line, split by label or fallback to comma
+        # If event_details is a single line, split by ' / ' or '|', else by label
         if '\n' not in event_details and ';' not in event_details:
-            # Try to split by label
-            for label in ["Date:", "Time:", "Venue:"]:
-                idx = event_details.find(label)
-                if idx != -1:
-                    value = event_details[idx+len(label):].split("\n")[0].strip()
-                    details_lines.append(value)
-            # If not found, fallback to comma split
-            if not details_lines:
-                details_lines = [x.strip() for x in event_details.split(",") if x.strip()]
+            # Try to split by ' / ' or '|'
+            if ' / ' in event_details:
+                details_lines = [x.strip() for x in event_details.split(' / ') if x.strip()]
+            elif '|' in event_details:
+                details_lines = [x.strip() for x in event_details.split('|') if x.strip()]
+            else:
+                # Try to split by label
+                for label in ["Date:", "Time:", "Venue:"]:
+                    idx = event_details.find(label)
+                    if idx != -1:
+                        value = event_details[idx+len(label):].split("\n")[0].strip()
+                        details_lines.append(value)
+                # If not found, fallback to comma split
+                if not details_lines:
+                    details_lines = [x.strip() for x in event_details.split(",") if x.strip()]
         else:
             # Split by newlines or semicolons
             details_lines = [line.strip() for line in _re.split(r'[\n;]', event_details) if line.strip()]
-        # If still only one line, try to split by comma
-        if len(details_lines) == 1 and ',' in details_lines[0]:
-            details_lines = [x.strip() for x in details_lines[0].split(",") if x.strip()]
+        # If still only one line, try to split by ' / ', '|', or comma
+        if len(details_lines) == 1:
+            if ' / ' in details_lines[0]:
+                details_lines = [x.strip() for x in details_lines[0].split(' / ') if x.strip()]
+            elif '|' in details_lines[0]:
+                details_lines = [x.strip() for x in details_lines[0].split('|') if x.strip()]
+            elif ',' in details_lines[0]:
+                details_lines = [x.strip() for x in details_lines[0].split(',') if x.strip()]
         details_y = speaker_grid_bottom + 30
         line_gap = 54
         free_gap = 30
