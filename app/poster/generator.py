@@ -83,6 +83,7 @@ class PosterGenerator:
         draw = ImageDraw.Draw(img)
         font_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 80)
         font_regular = ImageFont.truetype(settings.FONT_REGULAR_PATH, 48)
+        font_small = ImageFont.truetype(settings.FONT_REGULAR_PATH, 38)
         # Text wrapping utility
         def draw_wrapped_text(draw, text, font, x, y, max_width, line_spacing=1.2, anchor="la"):
             words = text.split()
@@ -125,9 +126,9 @@ class PosterGenerator:
                 mask = Image.new("L", (circle_size, circle_size), 0)
                 ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
                 img.paste(photo, (start_x + i*circle_size, y), mask)
-                # Speaker credentials (wrapped, left aligned under each photo)
+                # Speaker credentials (wrapped, left aligned under each photo, smaller font)
                 cred_y = y + circle_size + 10
-                draw_wrapped_text(draw, cred, font_regular, start_x + i*circle_size, cred_y, circle_size, anchor="la")
+                draw_wrapped_text(draw, cred, font_small, start_x + i*circle_size, cred_y, circle_size, anchor="la")
             speaker_grid_bottom = y + circle_size + 10 + int(font_regular.size * 2)
         else:
             speaker_grid_bottom = y_cursor + 40

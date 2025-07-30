@@ -37,9 +37,19 @@ class OpenAIService:
         return (await self.ask(prompt)).strip()
 
     async def summarize_description(self, description):
-        prompt = f"Summarize the following event description for a poster. Exclude date, time, venue, and links. Focus on what and why.\n\n{description}"
+        prompt = (
+            "Summarize the following event description for a poster. "
+            "Exclude date, time, venue, and links. Focus on what the meeting/event is and why it is important. "
+            "The summary must be concise, not more than 35 words, and should fit in 3 to 4 lines.\n\n"
+            f"{description}"
+        )
         return (await self.ask(prompt)).strip()
 
     async def extract_speakers_and_credentials(self, speakers_text):
-        prompt = f"From the following text, extract the list of speakers and generate a short credential for each, suitable for a poster. Output as: Name, Title, Organization.\n\n{speakers_text}"
+        prompt = (
+            "From the following text, extract the list of speakers and generate a short credential for each, suitable for a poster. "
+            "For each speaker, only output their name and their main designation/role and organization, nothing else. "
+            "Do not add numbering or bullet points. Output as: Name, Designation, Organization.\n\n"
+            f"{speakers_text}"
+        )
         return (await self.ask(prompt)).strip()
