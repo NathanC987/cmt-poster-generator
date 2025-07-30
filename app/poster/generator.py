@@ -123,36 +123,44 @@ class PosterGenerator:
         n = len(speaker_photos)
         speaker_grid_bottom = y_cursor
         if n:
+            # Dynamic grid: 1 row for up to 3 speakers, 2 rows for 4-6, 3 rows for 7-9, etc.
+            import math
+            max_per_row = 3
+            rows = math.ceil(n / max_per_row)
             circle_size = 320 if n == 1 else 220 if n == 2 else 160
-            grid_width = n * circle_size
-            start_x = width//2 - grid_width//2
             y = y_cursor + 40
-            for i, (photo_url, cred) in enumerate(zip(speaker_photos, credentials)):
-                if not photo_url:
-                    continue
-                photo = self.imgsvc.open_image(photo_url)
-                photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
-                mask = Image.new("L", (circle_size, circle_size), 0)
-                ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
-                img.paste(photo, (start_x + i*circle_size, y), mask)
-                # Speaker credentials (centered, name bold)
-                cred_y = y + circle_size + 10
-                # Split name and rest
-                cred_parts = cred.split(",", 1)
-                name = cred_parts[0].strip() if cred_parts else cred.strip()
-                rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
-                # Centered below circle
-                center_x = start_x + i*circle_size + circle_size//2
-                # Draw name bold, centered
-                name_bbox = font_small_bold.getbbox(name)
-                name_w = name_bbox[2] - name_bbox[0]
-                draw.text((center_x - name_w//2, cred_y), name, font=font_small_bold, fill="white")
-                # Draw rest (designation/org), regular, centered below name
-                if rest:
-                    rest_bbox = font_small.getbbox(rest)
-                    rest_w = rest_bbox[2] - rest_bbox[0]
-                    draw.text((center_x - rest_w//2, cred_y + int(font_small.size * 1.2)), rest, font=font_small, fill="white")
-            speaker_grid_bottom = y + circle_size + 10 + int(font_small.size * 2)
+            for row in range(rows):
+                speakers_in_row = min(max_per_row, n - row * max_per_row)
+                grid_width = speakers_in_row * circle_size
+                start_x = width//2 - grid_width//2
+                for j in range(speakers_in_row):
+                    i = row * max_per_row + j
+                    if i >= n:
+                        break
+                    photo_url = speaker_photos[i]
+                    cred = credentials[i]
+                    if not photo_url:
+                        continue
+                    photo = self.imgsvc.open_image(photo_url)
+                    photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
+                    mask = Image.new("L", (circle_size, circle_size), 0)
+                    ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
+                    img.paste(photo, (start_x + j*circle_size, y), mask)
+                    # Speaker credentials (centered, name bold)
+                    cred_y = y + circle_size + 10
+                    cred_parts = cred.split(",", 1)
+                    name = cred_parts[0].strip() if cred_parts else cred.strip()
+                    rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
+                    center_x = start_x + j*circle_size + circle_size//2
+                    name_bbox = font_small_bold.getbbox(name)
+                    name_w = name_bbox[2] - name_bbox[0]
+                    draw.text((center_x - name_w//2, cred_y), name, font=font_small_bold, fill="white")
+                    if rest:
+                        rest_bbox = font_small.getbbox(rest)
+                        rest_w = rest_bbox[2] - rest_bbox[0]
+                        draw.text((center_x - rest_w//2, cred_y + int(font_small.size * 1.2)), rest, font=font_small, fill="white")
+                y += circle_size + int(font_small.size * 2.2)
+            speaker_grid_bottom = y
         else:
             speaker_grid_bottom = y_cursor + 40
 
@@ -169,10 +177,27 @@ class PosterGenerator:
                 icons.append(icon)
             else:
                 icons.append(None)
-        # Parse event_details for values (remove label, but do not split on commas inside value)
+        # Ensure each detail (date, time, venue) is on its own line
         import re as _re
-        # Split only on newlines or semicolons, not commas
-        details_lines = [line.strip() for line in _re.split(r'[\n;]', event_details) if line.strip()]
+        # Try to extract date, time, venue from event_details
+        details_lines = []
+        # If event_details is a single line, split by label or fallback to comma
+        if '\n' not in event_details and ';' not in event_details:
+            # Try to split by label
+            for label in ["Date:", "Time:", "Venue:"]:
+                idx = event_details.find(label)
+                if idx != -1:
+                    value = event_details[idx+len(label):].split("\n")[0].strip()
+                    details_lines.append(value)
+            # If not found, fallback to comma split
+            if not details_lines:
+                details_lines = [x.strip() for x in event_details.split(",") if x.strip()]
+        else:
+            # Split by newlines or semicolons
+            details_lines = [line.strip() for line in _re.split(r'[\n;]', event_details) if line.strip()]
+        # If still only one line, try to split by comma
+        if len(details_lines) == 1 and ',' in details_lines[0]:
+            details_lines = [x.strip() for x in details_lines[0].split(",") if x.strip()]
         details_y = speaker_grid_bottom + 30
         line_gap = 54
         free_gap = 30
