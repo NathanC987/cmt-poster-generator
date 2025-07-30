@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-@router.post("/")
+@router.post("")
 async def generate_poster(
     request: Request,
     _=Depends(rate_limiter)
