@@ -50,7 +50,15 @@ class PosterGenerator:
 
         speaker_photos = [await find_speaker_photo(name) for name in speaker_names]
         # 4. Text formatting
-        event_details = await self.openai.format_event_details(payload.get("date", ""), payload.get("time", ""), payload.get("venue", ""))
+        # Normalize date to YYYY-MM-DD for OpenAI
+        import dateutil.parser
+        raw_date = payload.get("date", "")
+        try:
+            parsed_date = dateutil.parser.parse(raw_date, dayfirst=False, yearfirst=False)
+            norm_date = parsed_date.strftime("%Y-%m-%d")
+        except Exception:
+            norm_date = raw_date
+        event_details = await self.openai.format_event_details(norm_date, payload.get("time", ""), payload.get("venue", ""))
         summary = await self.openai.summarize_description(payload.get("description", ""))
         credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
         # 5. Compose poster
@@ -161,9 +169,13 @@ class PosterGenerator:
                 icons.append(icon)
             else:
                 icons.append(None)
-        # Parse event_details for values (remove label)
-        details_lines = [line.strip() for line in event_details.split(",") if line.strip()]
+        # Parse event_details for values (remove label, but do not split on commas inside value)
+        import re as _re
+        # Split only on newlines or semicolons, not commas
+        details_lines = [line.strip() for line in _re.split(r'[\n;]', event_details) if line.strip()]
         details_y = speaker_grid_bottom + 30
+        line_gap = 54
+        free_gap = 30
         for i, line in enumerate(details_lines):
             # Remove label if present (e.g., 'Date: July 8, 2025' -> 'July 8, 2025')
             if ":" in line:
@@ -172,16 +184,16 @@ class PosterGenerator:
                 value = line
             icon = icons[i] if i < len(icons) else None
             x = margin_x
-            y = details_y + i*54
+            y = details_y + i * (line_gap + free_gap)
             if icon:
                 img.paste(icon, (x, y), icon)
                 x += icon_size + 12
             draw.text((x, y + (icon_size - font_regular.size)//2), value, font=font_regular, fill="white", anchor="la")
 
-        # Register line (higher, with icon)
+        # Register line (move higher, with icon)
         register_icon_url = await self.wp.search_media("register")
         register_icon = self.imgsvc.open_image(register_icon_url).resize((60, 60)) if register_icon_url else None
-        reg_y = height - margin_y - 60
+        reg_y = height - margin_y - 160
         reg_x = width//2
         reg_text = "Register online at cmtassociation.org"
         if register_icon:
