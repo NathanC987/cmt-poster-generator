@@ -20,9 +20,35 @@ class PosterGenerator:
         landmark_url = await self.wp.search_media(landmark_slug)
         overlay_url = await self.wp.search_media("overlay")
         # 3. Speaker photos
+        import re
         speakers_text = payload.get("speakers", "")
-        speaker_names = [line.split(",")[0].strip() for line in (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n") if line.strip()]
-        speaker_photos = [await self.wp.search_media(name) for name in speaker_names]
+        speaker_lines = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
+        speaker_names = []
+        for line in speaker_lines:
+            # Remove leading numbering and punctuation (e.g., '1. ', '2) ', etc.)
+            name = re.sub(r"^\s*\d+\s*[\.|\)]?\s*", "", line)
+            name = name.split(",")[0].strip()
+            if name:
+                speaker_names.append(name)
+
+        async def find_speaker_photo(name):
+            # Try several variants for best match
+            variants = set()
+            base = name.strip()
+            variants.add(base)
+            variants.add(base.lower())
+            variants.add(base.replace(" ", "-").lower())
+            variants.add(base.replace(" ", "_").lower())
+            variants.add(base.replace(" ", ""))
+            variants.add(base.replace(" ", "-").replace("_", "-").lower())
+            variants.add(base.replace(" ", "_").replace("-", "_").lower())
+            for variant in variants:
+                photo = await self.wp.search_media(variant)
+                if photo:
+                    return photo
+            return None
+
+        speaker_photos = [await find_speaker_photo(name) for name in speaker_names]
         # 4. Text formatting
         event_details = await self.openai.format_event_details(payload.get("date", ""), payload.get("time", ""), payload.get("venue", ""))
         summary = await self.openai.summarize_description(payload.get("description", ""))

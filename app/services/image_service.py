@@ -19,7 +19,7 @@ class ImageService:
 
     def resize_and_center(self, img, size):
         logger.info(f"Resizing and centering image to {size}")
-        img.thumbnail(size, Image.ANTIALIAS)
+        img.thumbnail(size, Image.Resampling.LANCZOS)
         bg = Image.new("RGBA", size, (0,0,0,0))
         bg.paste(img, ((size[0]-img.width)//2, (size[1]-img.height)//2), img)
         return bg
