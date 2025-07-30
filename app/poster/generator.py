@@ -90,7 +90,8 @@ class PosterGenerator:
             current = ""
             for word in words:
                 test = current + (" " if current else "") + word
-                w, _ = draw.textsize(test, font=font)
+                bbox = font.getbbox(test)
+                w = bbox[2] - bbox[0]
                 if w > max_width and current:
                     lines.append(current)
                     current = word
