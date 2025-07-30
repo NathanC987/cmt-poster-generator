@@ -84,6 +84,7 @@ class PosterGenerator:
         font_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 80)
         font_regular = ImageFont.truetype(settings.FONT_REGULAR_PATH, 48)
         font_small = ImageFont.truetype(settings.FONT_REGULAR_PATH, 38)
+        font_small_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 38)
         # Text wrapping utility
         def draw_wrapped_text(draw, text, font, x, y, max_width, line_spacing=1.2, anchor="la"):
             words = text.split()
@@ -126,21 +127,73 @@ class PosterGenerator:
                 mask = Image.new("L", (circle_size, circle_size), 0)
                 ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
                 img.paste(photo, (start_x + i*circle_size, y), mask)
-                # Speaker credentials (wrapped, left aligned under each photo, smaller font)
+                # Speaker credentials (centered, name bold)
                 cred_y = y + circle_size + 10
-                draw_wrapped_text(draw, cred, font_small, start_x + i*circle_size, cred_y, circle_size, anchor="la")
-            speaker_grid_bottom = y + circle_size + 10 + int(font_regular.size * 2)
+                # Split name and rest
+                cred_parts = cred.split(",", 1)
+                name = cred_parts[0].strip() if cred_parts else cred.strip()
+                rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
+                # Centered below circle
+                center_x = start_x + i*circle_size + circle_size//2
+                # Draw name bold, centered
+                name_bbox = font_small_bold.getbbox(name)
+                name_w = name_bbox[2] - name_bbox[0]
+                draw.text((center_x - name_w//2, cred_y), name, font=font_small_bold, fill="white")
+                # Draw rest (designation/org), regular, centered below name
+                if rest:
+                    rest_bbox = font_small.getbbox(rest)
+                    rest_w = rest_bbox[2] - rest_bbox[0]
+                    draw.text((center_x - rest_w//2, cred_y + int(font_small.size * 1.2)), rest, font=font_small, fill="white")
+            speaker_grid_bottom = y + circle_size + 10 + int(font_small.size * 2)
         else:
             speaker_grid_bottom = y_cursor + 40
 
-        # Event details (date, time, venue on separate lines, left aligned below speaker grid)
+        # Event details (date, time, venue on separate lines, left aligned below speaker grid, with icons)
+        # Fetch icons from WordPress
+        icon_size = int(font_regular.size * 1.1)
+        date_icon_url = await self.wp.search_media("date")
+        time_icon_url = await self.wp.search_media("time")
+        venue_icon_url = await self.wp.search_media("venue")
+        icons = []
+        for url in [date_icon_url, time_icon_url, venue_icon_url]:
+            if url:
+                icon = self.imgsvc.open_image(url).resize((icon_size, icon_size))
+                icons.append(icon)
+            else:
+                icons.append(None)
+        # Parse event_details for values (remove label)
         details_lines = [line.strip() for line in event_details.split(",") if line.strip()]
         details_y = speaker_grid_bottom + 30
         for i, line in enumerate(details_lines):
-            draw.text((margin_x, details_y + i*54), line, font=font_regular, fill="white", anchor="la")
+            # Remove label if present (e.g., 'Date: July 8, 2025' -> 'July 8, 2025')
+            if ":" in line:
+                value = line.split(":", 1)[1].strip()
+            else:
+                value = line
+            icon = icons[i] if i < len(icons) else None
+            x = margin_x
+            y = details_y + i*54
+            if icon:
+                img.paste(icon, (x, y), icon)
+                x += icon_size + 12
+            draw.text((x, y + (icon_size - font_regular.size)//2), value, font=font_regular, fill="white", anchor="la")
 
-        # Register line (bottom center)
-        draw.text((width//2, height-margin_y), "Register online at cmtassociation.org", font=font_regular, fill="white", anchor="ma")
+        # Register line (higher, with icon)
+        register_icon_url = await self.wp.search_media("register")
+        register_icon = self.imgsvc.open_image(register_icon_url).resize((60, 60)) if register_icon_url else None
+        reg_y = height - margin_y - 60
+        reg_x = width//2
+        reg_text = "Register online at cmtassociation.org"
+        if register_icon:
+            reg_icon_w = register_icon.width
+            reg_text_bbox = font_regular.getbbox(reg_text)
+            reg_text_w = reg_text_bbox[2] - reg_text_bbox[0]
+            total_w = reg_icon_w + 16 + reg_text_w
+            reg_icon_x = reg_x - total_w//2
+            img.paste(register_icon, (reg_icon_x, reg_y), register_icon)
+            draw.text((reg_icon_x + reg_icon_w + 16, reg_y + (register_icon.height - font_regular.size)//2), reg_text, font=font_regular, fill="white", anchor="la")
+        else:
+            draw.text((reg_x, reg_y), reg_text, font=font_regular, fill="white", anchor="ma")
         # Save
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             img.save(tmp.name, format="PNG")
