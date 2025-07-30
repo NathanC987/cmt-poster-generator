@@ -75,8 +75,8 @@ class PosterGenerator:
             norm_date = parsed_date.strftime("%Y-%m-%d")
         except Exception:
             norm_date = raw_date
-        # Use ' / ' as separator for event details to avoid comma issues
-        event_details = await self.openai.format_event_details(norm_date, payload.get("time", ""), payload.get("venue", ""), separator=" / ")
+        # Get event details from OpenAI (separator should be handled in the OpenAI prompt, not as an argument)
+        event_details = await self.openai.format_event_details(norm_date, payload.get("time", ""), payload.get("venue", ""))
         summary = await self.openai.summarize_description(payload.get("description", ""))
         credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
         # 5. Compose poster
