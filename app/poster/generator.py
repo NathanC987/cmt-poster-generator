@@ -69,37 +69,46 @@ class PosterGenerator:
 
     async def compose_poster(self, title, summary, event_details, speaker_photos, credentials, landmark_url, overlay_url):
         width, height = 1200, 1600
+        # Margins
+        margin_x = 80
+        margin_y = 80
+        content_width = width - 2 * margin_x
+        content_height = height - 2 * margin_y
+
         img = self.imgsvc.open_image(landmark_url)
-        img = self.imgsvc.resize_and_center(img, (width, height))
+        img = self.imgsvc.crop_to_aspect(img, (width, height))
         overlay = self.imgsvc.open_image(overlay_url)
-        overlay = self.imgsvc.resize_and_center(overlay, (width, height))
+        overlay = self.imgsvc.crop_to_aspect(overlay, (width, height))
         img.alpha_composite(overlay)
         draw = ImageDraw.Draw(img)
         font_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 80)
         font_regular = ImageFont.truetype(settings.FONT_REGULAR_PATH, 48)
         # Title
-        draw.text((width//2, 80), title, font=font_bold, fill="white", anchor="ma")
+        draw.text((width//2, margin_y), title, font=font_bold, fill="white", anchor="ma")
         # Summary
-        draw.text((width//2, 200), summary, font=font_regular, fill="white", anchor="ma")
+        draw.text((width//2, margin_y+120), summary, font=font_regular, fill="white", anchor="ma")
         # Speaker grid
         n = len(speaker_photos)
         if n:
             circle_size = 320 if n == 1 else 220 if n == 2 else 160
             start_x = width//2 - ((n-1)*circle_size)//2
-            y = 400
+            y = margin_y+260
             for i, (photo_url, cred) in enumerate(zip(speaker_photos, credentials)):
                 if not photo_url:
                     continue
                 photo = self.imgsvc.open_image(photo_url)
-                photo = self.imgsvc.resize_and_center(photo, (circle_size, circle_size))
+                photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
                 mask = Image.new("L", (circle_size, circle_size), 0)
                 ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
                 img.paste(photo, (start_x + i*circle_size, y), mask)
                 draw.text((start_x + i*circle_size + circle_size//2, y+circle_size+10), cred, font=font_regular, fill="white", anchor="ma")
-        # Event details
-        draw.text((width//2, height-220), event_details, font=font_regular, fill="white", anchor="ma")
+        # Event details (date, time, venue on separate lines)
+        details_lines = [line.strip() for line in event_details.split(",") if line.strip()]
+        details_y = height - margin_y - 180
+        for i, line in enumerate(details_lines):
+            draw.text((width//2, details_y + i*54), line, font=font_regular, fill="white", anchor="ma")
         # Register line
-        draw.text((width//2, height-100), "Register online at cmtassociation.org", font=font_regular, fill="white", anchor="ma")
+        draw.text((width//2, height-margin_y), "Register online at cmtassociation.org", font=font_regular, fill="white", anchor="ma")
         # Save
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
             img.save(tmp.name, format="PNG")

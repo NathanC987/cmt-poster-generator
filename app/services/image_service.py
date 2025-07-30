@@ -17,12 +17,24 @@ class ImageService:
         logger.info(f"Image opened: {path_or_url} (size: {img.size})")
         return img
 
-    def resize_and_center(self, img, size):
-        logger.info(f"Resizing and centering image to {size}")
-        img.thumbnail(size, Image.Resampling.LANCZOS)
-        bg = Image.new("RGBA", size, (0,0,0,0))
-        bg.paste(img, ((size[0]-img.width)//2, (size[1]-img.height)//2), img)
-        return bg
+    def crop_to_aspect(self, img, target_size):
+        logger.info(f"Cropping image to fill aspect ratio {target_size}")
+        target_w, target_h = target_size
+        src_w, src_h = img.size
+        src_aspect = src_w / src_h
+        target_aspect = target_w / target_h
+        if src_aspect > target_aspect:
+            # Source is wider than target: crop width
+            new_w = int(target_aspect * src_h)
+            left = (src_w - new_w) // 2
+            img = img.crop((left, 0, left + new_w, src_h))
+        else:
+            # Source is taller than target: crop height
+            new_h = int(src_w / target_aspect)
+            top = (src_h - new_h) // 2
+            img = img.crop((0, top, src_w, top + new_h))
+        img = img.resize(target_size, Image.Resampling.LANCZOS)
+        return img
 
     def save_image(self, img, path):
         logger.info(f"Saving image to {path}")
