@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from app.poster.generator import PosterGenerator
 from app.services.wordpress_service import WordPressService
 from app.services.openai_service import OpenAIService
@@ -12,8 +12,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/")
-@rate_limiter
-async def generate_poster(request: Request):
+async def generate_poster(
+    request: Request,
+    _=Depends(rate_limiter)
+):
     payload = await request.json()
     logger.info(f"Received poster generation request: {payload}")
     try:
