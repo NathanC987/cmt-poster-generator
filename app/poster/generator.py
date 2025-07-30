@@ -123,16 +123,21 @@ class PosterGenerator:
         n = len(speaker_photos)
         speaker_grid_bottom = y_cursor
         if n:
-            # Dynamic grid: 1 row for up to 3 speakers, 2 rows for 4-6, 3 rows for 7-9, etc.
+            # 1 row for up to 4 speakers, 2 rows for 5-8, etc.
             import math
-            max_per_row = 3
+            max_per_row = 4
             rows = math.ceil(n / max_per_row)
             circle_size = 320 if n == 1 else 220 if n == 2 else 160
             y = y_cursor + 40
             for row in range(rows):
                 speakers_in_row = min(max_per_row, n - row * max_per_row)
-                grid_width = speakers_in_row * circle_size
-                start_x = width//2 - grid_width//2
+                # Evenly space circles across the row
+                total_space = width - 2 * margin_x
+                if speakers_in_row == 1:
+                    x_positions = [width // 2 - circle_size // 2]
+                else:
+                    gap = (total_space - speakers_in_row * circle_size) // (speakers_in_row - 1) if speakers_in_row > 1 else 0
+                    x_positions = [margin_x + j * (circle_size + gap) for j in range(speakers_in_row)]
                 for j in range(speakers_in_row):
                     i = row * max_per_row + j
                     if i >= n:
@@ -145,13 +150,13 @@ class PosterGenerator:
                     photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
                     mask = Image.new("L", (circle_size, circle_size), 0)
                     ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
-                    img.paste(photo, (start_x + j*circle_size, y), mask)
+                    img.paste(photo, (x_positions[j], y), mask)
                     # Speaker credentials (centered, name bold)
                     cred_y = y + circle_size + 10
                     cred_parts = cred.split(",", 1)
                     name = cred_parts[0].strip() if cred_parts else cred.strip()
                     rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
-                    center_x = start_x + j*circle_size + circle_size//2
+                    center_x = x_positions[j] + circle_size//2
                     name_bbox = font_small_bold.getbbox(name)
                     name_w = name_bbox[2] - name_bbox[0]
                     draw.text((center_x - name_w//2, cred_y), name, font=font_small_bold, fill="white")
