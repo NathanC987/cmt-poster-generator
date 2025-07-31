@@ -156,7 +156,7 @@ class PosterGenerator:
                 total_circles_width = speakers_in_row * circle_size
                 num_gaps = speakers_in_row + 1
                 gap = (width - total_circles_width) / num_gaps
-                x_positions = [int(gap + j * (circle_size + gap)) for j in range(speakers_in_row)]
+                x_positions = [round(gap + j * (circle_size + gap)) for j in range(speakers_in_row)]
                 for j in range(speakers_in_row):
                     i = row * max_per_row + j
                     if i >= n:
