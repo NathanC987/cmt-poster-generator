@@ -217,8 +217,8 @@ class PosterGenerator:
             speaker_grid_bottom = y
         else:
             speaker_grid_bottom = y_cursor + 40
-        # Ensure event details start after the lowest speaker credential
-        details_y = max(speaker_grid_bottom + 30, max_cred_y + 30)
+        # Ensure event details start after the lowest speaker credential, with extra vertical gap
+        details_y = max(speaker_grid_bottom + 60, max_cred_y + 60)
 
         # Event details (date, time, venue on separate lines, left aligned below speaker grid, with icons)
         # Fetch icons from WordPress
