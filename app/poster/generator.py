@@ -90,6 +90,10 @@ class PosterGenerator:
             overlay_url=overlay_url
         )
         # 6. Upload poster
+        if not poster_path:
+            import logging
+            logging.error("Poster generation failed: compose_poster returned None. Check for missing images or file save errors.")
+            raise RuntimeError("Poster generation failed: compose_poster returned None. Check for missing images or file save errors.")
         poster_url = await self.wp.upload_media(poster_path, os.path.basename(poster_path))
         return [poster_url]
 
