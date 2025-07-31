@@ -178,7 +178,7 @@ class PosterGenerator:
                     rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
                     center_x = x_positions[j] + circle_size//2
                     # Allow credentials to be wider than the circle, but not exceed content width
-                    max_cred_width = min(int(circle_size * 1.5), content_width)
+                    max_cred_width = min(int(circle_size * 2), content_width)
                     def wrap_text(text, font, max_width):
                         words = text.split()
                         lines = []
@@ -289,7 +289,7 @@ class PosterGenerator:
         # Register line (move higher, with icon)
         register_icon_url = await self.wp.search_media("register")
         register_icon = self.imgsvc.open_image(register_icon_url).resize((60, 60)) if register_icon_url else None
-        reg_y = height - margin_y - 260  # Move register line higher
+        reg_y = height - margin_y - 210  # Move register line higher
         reg_x = width//2
         reg_text = "Register online at cmtassociation.org"
         if register_icon:
