@@ -253,7 +253,8 @@ class PosterGenerator:
             # If not found, fallback to comma split
             if not details_lines:
                 details_lines = [x.strip() for x in s.split(",") if x.strip()]
-        details_y = speaker_grid_bottom + 30
+        # details_y is already set to max(speaker_grid_bottom + 60, max_cred_y + 60) above
+        # Do not reset it here; use the value that ensures event details start after the lowest credential
         line_gap = 54
         free_gap = 30
         for i, line in enumerate(details_lines):
