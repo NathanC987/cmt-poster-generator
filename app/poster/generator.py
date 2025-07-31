@@ -227,8 +227,8 @@ class PosterGenerator:
         line_gap = 54
         free_gap = 30
         for i, line in enumerate(details_lines):
-            # Remove label if present (e.g., 'Date: July 8, 2025' -> 'July 8, 2025')
-            if ":" in line:
+            # Remove label only for the date line (first line), not for time/venue to avoid truncating values with colons
+            if i == 0 and ":" in line:
                 value = line.split(":", 1)[1].strip()
             else:
                 value = line
@@ -238,7 +238,30 @@ class PosterGenerator:
             if icon:
                 img.paste(icon, (x, y), icon)
                 x += icon_size + 12
-            draw.text((x, y + (icon_size - font_regular.size)//2), value, font=font_regular, fill="white", anchor="la")
+            # For venue (last line), wrap text if too long
+            if i == 2:
+                # Wrap venue text to fit within content_width
+                def wrap_text(text, font, max_width):
+                    words = text.split()
+                    lines = []
+                    current = ""
+                    for word in words:
+                        test = current + (" " if current else "") + word
+                        bbox = font.getbbox(test)
+                        w = bbox[2] - bbox[0]
+                        if w > max_width and current:
+                            lines.append(current)
+                            current = word
+                        else:
+                            current = test
+                    if current:
+                        lines.append(current)
+                    return lines
+                venue_lines = wrap_text(value, font_regular, content_width - (x - margin_x))
+                for j, vline in enumerate(venue_lines):
+                    draw.text((x, y + j * int(font_regular.size * 1.2)), vline, font=font_regular, fill="white", anchor="la")
+            else:
+                draw.text((x, y + (icon_size - font_regular.size)//2), value, font=font_regular, fill="white", anchor="la")
 
         # Register line (move higher, with icon)
         register_icon_url = await self.wp.search_media("register")
