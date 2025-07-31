@@ -244,47 +244,25 @@ class PosterGenerator:
         register_icon_url = await self.wp.search_media("register")
         register_icon = self.imgsvc.open_image(register_icon_url).resize((60, 60)) if register_icon_url else None
         reg_y = height - margin_y - 160
-        if n:
-            # 1 row for up to 4 speakers, 2 rows for 5-8, etc.
-            import math
-            max_per_row = 4
-            rows = math.ceil(n / max_per_row)
-            circle_size = 320 if n == 1 else 220 if n == 2 else 160
-            y = y_cursor + 40
-            for row in range(rows):
-                speakers_in_row = min(max_per_row, n - row * max_per_row)
-                # Center speakers in the row, evenly spaced between left and right borders
-                total_space = width - 2 * margin_x
-                row_width = speakers_in_row * circle_size + (speakers_in_row - 1) * 60  # 60px gap between circles
-                start_x = margin_x + (total_space - row_width) // 2 if speakers_in_row > 1 else width // 2 - circle_size // 2
-                x_positions = [start_x + j * (circle_size + 60) for j in range(speakers_in_row)]
-                for j in range(speakers_in_row):
-                    i = row * max_per_row + j
-                    if i >= n:
-                        break
-                    photo_url = speaker_photos[i]
-                    cred = credentials[i]
-                    if not photo_url:
-                        continue
-                    photo = self.imgsvc.open_image(photo_url)
-                    photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
-                    mask = Image.new("L", (circle_size, circle_size), 0)
-                    ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
-                    img.paste(photo, (x_positions[j], y), mask)
-                    # Speaker credentials (centered, name bold)
-                    cred_y = y + circle_size + 10
-                    cred_parts = cred.split(",", 1)
-                    name = cred_parts[0].strip() if cred_parts else cred.strip()
-                    rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
-                    center_x = x_positions[j] + circle_size//2
-                    name_bbox = font_small_bold.getbbox(name)
-                    name_w = name_bbox[2] - name_bbox[0]
-                    draw.text((center_x - name_w//2, cred_y), name, font=font_small_bold, fill="white")
-                    if rest:
-                        rest_bbox = font_small.getbbox(rest)
-                        rest_w = rest_bbox[2] - rest_bbox[0]
-                        draw.text((center_x - rest_w//2, cred_y + int(font_small.size * 1.2)), rest, font=font_small, fill="white")
-                y += circle_size + int(font_small.size * 2.2)
-            speaker_grid_bottom = y
+        reg_x = width//2
+        reg_text = "Register online at cmtassociation.org"
+        if register_icon:
+            reg_icon_w = register_icon.width
+            reg_text_bbox = font_regular.getbbox(reg_text)
+            reg_text_w = reg_text_bbox[2] - reg_text_bbox[0]
+            total_w = reg_icon_w + 16 + reg_text_w
+            reg_icon_x = reg_x - total_w//2
+            img.paste(register_icon, (reg_icon_x, reg_y), register_icon)
+            draw.text((reg_icon_x + reg_icon_w + 16, reg_y + (register_icon.height - font_regular.size)//2), reg_text, font=font_regular, fill="white", anchor="la")
         else:
-            speaker_grid_bottom = y_cursor + 40
+            draw.text((reg_x, reg_y), reg_text, font=font_regular, fill="white", anchor="ma")
+        # Save
+        import logging
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
+                img.save(tmp.name, format="PNG")
+                logging.info(f"Poster image saved to: {tmp.name}")
+                return tmp.name
+        except Exception as e:
+            logging.error(f"Failed to save poster image: {e}")
+            return None
