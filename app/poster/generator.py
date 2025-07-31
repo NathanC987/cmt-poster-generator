@@ -151,6 +151,7 @@ class PosterGenerator:
             rows = math.ceil(n / max_per_row)
             circle_size = 320 if n == 1 else 220 if n == 2 else 160
             y = y_cursor + 40
+            max_cred_y = y_cursor
             for row in range(rows):
                 speakers_in_row = min(max_per_row, n - row * max_per_row)
                 total_circles_width = speakers_in_row * circle_size
@@ -207,10 +208,10 @@ class PosterGenerator:
                             rline_bbox = font_small.getbbox(rline)
                             rline_w = rline_bbox[2] - rline_bbox[0]
                             draw.text((center_x - rline_w//2, offset_y + k * int(font_small.size * 1.1)), rline, font=font_small, fill="white")
-                    # Track the lowest y position of credentials
-                    cred_end_y = offset_y
-                    if rest:
-                        cred_end_y += len(rest_lines) * int(font_small.size * 1.1)
+                        cred_end_y = offset_y + len(rest_lines) * int(font_small.size * 1.1)
+                    else:
+                        cred_end_y = offset_y
+                    # Track the lowest y position of credentials for all speakers
                     if cred_end_y > max_cred_y:
                         max_cred_y = cred_end_y
                 y += circle_size + int(font_small.size * 2.2)
