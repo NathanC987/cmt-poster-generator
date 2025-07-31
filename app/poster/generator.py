@@ -177,7 +177,8 @@ class PosterGenerator:
                     name = cred_parts[0].strip() if cred_parts else cred.strip()
                     rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
                     center_x = x_positions[j] + circle_size//2
-                    max_cred_width = circle_size
+                    # Allow credentials to be wider than the circle, but not exceed content width
+                    max_cred_width = min(int(circle_size * 1.5), content_width)
                     def wrap_text(text, font, max_width):
                         words = text.split()
                         lines = []
