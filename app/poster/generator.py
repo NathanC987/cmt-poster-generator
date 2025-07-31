@@ -113,8 +113,8 @@ class PosterGenerator:
         draw = ImageDraw.Draw(img)
         font_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 80)
         font_regular = ImageFont.truetype(settings.FONT_REGULAR_PATH, 48)
-        font_small = ImageFont.truetype(settings.FONT_REGULAR_PATH, 38)
-        font_small_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 38)
+        font_small = ImageFont.truetype(settings.FONT_REGULAR_PATH, 32)  # Slightly smaller
+        font_small_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 32)  # Slightly smaller
         # Text wrapping utility
         def draw_wrapped_text(draw, text, font, x, y, max_width, line_spacing=1.2, anchor="la"):
             words = text.split()
@@ -144,8 +144,8 @@ class PosterGenerator:
         # Speaker grid
         n = len(speaker_photos)
         speaker_grid_bottom = y_cursor
+        max_cred_y = y_cursor
         if n:
-            # 1 row for up to 4 speakers, 2 rows for 5-8, etc.
             import math
             max_per_row = 4
             rows = math.ceil(n / max_per_row)
@@ -153,7 +153,6 @@ class PosterGenerator:
             y = y_cursor + 40
             for row in range(rows):
                 speakers_in_row = min(max_per_row, n - row * max_per_row)
-                # Evenly distribute circles with n+1 gaps
                 total_circles_width = speakers_in_row * circle_size
                 num_gaps = speakers_in_row + 1
                 gap = (width - total_circles_width) / num_gaps
@@ -177,7 +176,6 @@ class PosterGenerator:
                     name = cred_parts[0].strip() if cred_parts else cred.strip()
                     rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
                     center_x = x_positions[j] + circle_size//2
-                    # Allow credentials to be wider than the circle, but not exceed content width
                     max_cred_width = min(int(circle_size * 2), content_width)
                     def wrap_text(text, font, max_width):
                         words = text.split()
@@ -209,10 +207,18 @@ class PosterGenerator:
                             rline_bbox = font_small.getbbox(rline)
                             rline_w = rline_bbox[2] - rline_bbox[0]
                             draw.text((center_x - rline_w//2, offset_y + k * int(font_small.size * 1.1)), rline, font=font_small, fill="white")
+                    # Track the lowest y position of credentials
+                    cred_end_y = offset_y
+                    if rest:
+                        cred_end_y += len(rest_lines) * int(font_small.size * 1.1)
+                    if cred_end_y > max_cred_y:
+                        max_cred_y = cred_end_y
                 y += circle_size + int(font_small.size * 2.2)
             speaker_grid_bottom = y
         else:
             speaker_grid_bottom = y_cursor + 40
+        # Ensure event details start after the lowest speaker credential
+        details_y = max(speaker_grid_bottom + 30, max_cred_y + 30)
 
         # Event details (date, time, venue on separate lines, left aligned below speaker grid, with icons)
         # Fetch icons from WordPress
