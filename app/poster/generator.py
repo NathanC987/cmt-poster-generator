@@ -153,13 +153,11 @@ class PosterGenerator:
             y = y_cursor + 40
             for row in range(rows):
                 speakers_in_row = min(max_per_row, n - row * max_per_row)
-                # Evenly space circles across the row
-                total_space = width - 2 * margin_x
-                if speakers_in_row == 1:
-                    x_positions = [width // 2 - circle_size // 2]
-                else:
-                    gap = (total_space - speakers_in_row * circle_size) // (speakers_in_row - 1) if speakers_in_row > 1 else 0
-                    x_positions = [margin_x + j * (circle_size + gap) for j in range(speakers_in_row)]
+                # Evenly distribute circles with n+1 gaps
+                total_circles_width = speakers_in_row * circle_size
+                num_gaps = speakers_in_row + 1
+                gap = (width - total_circles_width) / num_gaps
+                x_positions = [int(gap + j * (circle_size + gap)) for j in range(speakers_in_row)]
                 for j in range(speakers_in_row):
                     i = row * max_per_row + j
                     if i >= n:
@@ -173,19 +171,43 @@ class PosterGenerator:
                     mask = Image.new("L", (circle_size, circle_size), 0)
                     ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
                     img.paste(photo, (x_positions[j], y), mask)
-                    # Speaker credentials (centered, name bold)
+                    # Speaker credentials (centered, name bold, wrap if too long)
                     cred_y = y + circle_size + 10
                     cred_parts = cred.split(",", 1)
                     name = cred_parts[0].strip() if cred_parts else cred.strip()
                     rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
                     center_x = x_positions[j] + circle_size//2
-                    name_bbox = font_small_bold.getbbox(name)
-                    name_w = name_bbox[2] - name_bbox[0]
-                    draw.text((center_x - name_w//2, cred_y), name, font=font_small_bold, fill="white")
+                    max_cred_width = circle_size
+                    def wrap_text(text, font, max_width):
+                        words = text.split()
+                        lines = []
+                        current = ""
+                        for word in words:
+                            test = current + (" " if current else "") + word
+                            bbox = font.getbbox(test)
+                            w = bbox[2] - bbox[0]
+                            if w > max_width and current:
+                                lines.append(current)
+                                current = word
+                            else:
+                                current = test
+                        if current:
+                            lines.append(current)
+                        return lines
+                    # Draw name (bold, wrap if needed)
+                    name_lines = wrap_text(name, font_small_bold, max_cred_width)
+                    for k, nline in enumerate(name_lines):
+                        nline_bbox = font_small_bold.getbbox(nline)
+                        nline_w = nline_bbox[2] - nline_bbox[0]
+                        draw.text((center_x - nline_w//2, cred_y + k * int(font_small_bold.size * 1.1)), nline, font=font_small_bold, fill="white")
+                    offset_y = cred_y + len(name_lines) * int(font_small_bold.size * 1.1)
+                    # Draw rest (wrap if needed)
                     if rest:
-                        rest_bbox = font_small.getbbox(rest)
-                        rest_w = rest_bbox[2] - rest_bbox[0]
-                        draw.text((center_x - rest_w//2, cred_y + int(font_small.size * 1.2)), rest, font=font_small, fill="white")
+                        rest_lines = wrap_text(rest, font_small, max_cred_width)
+                        for k, rline in enumerate(rest_lines):
+                            rline_bbox = font_small.getbbox(rline)
+                            rline_w = rline_bbox[2] - rline_bbox[0]
+                            draw.text((center_x - rline_w//2, offset_y + k * int(font_small.size * 1.1)), rline, font=font_small, fill="white")
                 y += circle_size + int(font_small.size * 2.2)
             speaker_grid_bottom = y
         else:
@@ -266,7 +288,7 @@ class PosterGenerator:
         # Register line (move higher, with icon)
         register_icon_url = await self.wp.search_media("register")
         register_icon = self.imgsvc.open_image(register_icon_url).resize((60, 60)) if register_icon_url else None
-        reg_y = height - margin_y - 160
+        reg_y = height - margin_y - 260  # Move register line higher
         reg_x = width//2
         reg_text = "Register online at cmtassociation.org"
         if register_icon:
