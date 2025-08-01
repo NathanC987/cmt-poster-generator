@@ -21,7 +21,16 @@ class PosterGenerator:
         overlay_url = await self.wp.search_media("overlay")
         # 3. Speaker photos
         import re
-        speakers_text = payload.get("speakers", "")
+        speakers_data = payload.get("speakers", "")
+        
+        # Handle both string and list formats for speakers
+        if isinstance(speakers_data, list):
+            # If it's a list, join it into a string
+            speakers_text = "\n".join(str(item) for item in speakers_data if item)
+        else:
+            # If it's a string, use as is
+            speakers_text = str(speakers_data) if speakers_data else ""
+        
         if speakers_text.strip():  # Only process if speakers text is not empty
             speaker_lines = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
             speaker_names = []
