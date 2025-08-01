@@ -22,14 +22,18 @@ class PosterGenerator:
         # 3. Speaker photos
         import re
         speakers_text = payload.get("speakers", "")
-        speaker_lines = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
-        speaker_names = []
-        for line in speaker_lines:
-            # Remove leading numbering and punctuation (e.g., '1. ', '2) ', etc.)
-            name = re.sub(r"^\s*\d+\s*[\.|\)]?\s*", "", line)
-            name = name.split(",")[0].strip()
-            if name:
-                speaker_names.append(name)
+        if speakers_text.strip():  # Only process if speakers text is not empty
+            speaker_lines = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
+            speaker_names = []
+            for line in speaker_lines:
+                # Remove leading numbering and punctuation (e.g., '1. ', '2) ', etc.)
+                name = re.sub(r"^\s*\d+\s*[\.|\)]?\s*", "", line)
+                name = name.split(",")[0].strip()
+                if name:
+                    speaker_names.append(name)
+        else:
+            speaker_lines = []
+            speaker_names = []
 
         async def find_speaker_photo(name):
             # Try several variants for best match, including first name only, ignore case, and missing middle names
@@ -78,7 +82,10 @@ class PosterGenerator:
         # Get event details from OpenAI (separator should be handled in the OpenAI prompt, not as an argument)
         event_details = await self.openai.format_event_details(norm_date, payload.get("time", ""), payload.get("venue", ""))
         summary = await self.openai.summarize_description(payload.get("description", ""))
-        credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
+        if speakers_text.strip():
+            credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
+        else:
+            credentials = []
         # 5. Compose poster
         poster_path = await self.compose_poster(
             title=payload.get("title", ""),
@@ -115,6 +122,9 @@ class PosterGenerator:
         font_regular = ImageFont.truetype(settings.FONT_REGULAR_PATH, 48)
         font_small = ImageFont.truetype(settings.FONT_REGULAR_PATH, 32)  # Slightly smaller
         font_small_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 32)  # Slightly smaller
+        # Even smaller fonts for 4 speakers to reduce clutter
+        font_tiny = ImageFont.truetype(settings.FONT_REGULAR_PATH, 24)
+        font_tiny_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 24)
         # Text wrapping utility
         def draw_wrapped_text(draw, text, font, x, y, max_width, line_spacing=1.2, anchor="la"):
             words = text.split()
@@ -142,7 +152,7 @@ class PosterGenerator:
         y_cursor += 20
         y_cursor = draw_wrapped_text(draw, summary, font_regular, margin_x, y_cursor, content_width)
         # Speaker grid
-        n = len(speaker_photos)
+        n = len([p for p in speaker_photos if p])  # Count only speakers with photos
         speaker_grid_bottom = y_cursor
         max_cred_y = y_cursor
         if n:
@@ -152,74 +162,115 @@ class PosterGenerator:
             circle_size = 320 if n == 1 else 220 if n == 2 else 160
             y = y_cursor + 40
             max_cred_y = y_cursor
+            
+            # Choose appropriate font size based on number of speakers
+            cred_font = font_tiny if n == 4 else font_small
+            cred_font_bold = font_tiny_bold if n == 4 else font_small_bold
+            
+            speaker_index = 0  # Track actual speakers with photos
             for row in range(rows):
                 speakers_in_row = min(max_per_row, n - row * max_per_row)
                 total_circles_width = speakers_in_row * circle_size
                 num_gaps = speakers_in_row + 1
                 gap = (width - total_circles_width) / num_gaps
                 x_positions = [round(gap + j * (circle_size + gap)) for j in range(speakers_in_row)]
-                for j in range(speakers_in_row):
-                    i = row * max_per_row + j
-                    if i >= n:
+                
+                position_index = 0
+                for j in range(len(speaker_photos)):
+                    if position_index >= speakers_in_row:
                         break
-                    photo_url = speaker_photos[i]
-                    cred = credentials[i]
+                    if row * max_per_row + position_index >= n:
+                        break
+                        
+                    photo_url = speaker_photos[j]
+                    cred = credentials[j] if j < len(credentials) else ""
+                    
                     if not photo_url:
-                        continue
-                    photo = self.imgsvc.open_image(photo_url)
-                    photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
-                    mask = Image.new("L", (circle_size, circle_size), 0)
-                    ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
-                    img.paste(photo, (x_positions[j], y), mask)
-                    # Speaker credentials (centered, name bold, wrap if too long)
-                    cred_y = y + circle_size + 10
-                    cred_parts = cred.split(",", 1)
-                    name = cred_parts[0].strip() if cred_parts else cred.strip()
-                    rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
-                    center_x = x_positions[j] + circle_size//2
-                    max_cred_width = min(int(circle_size * 2), content_width)
-                    def wrap_text(text, font, max_width):
-                        words = text.split()
-                        lines = []
-                        current = ""
-                        for word in words:
-                            test = current + (" " if current else "") + word
-                            bbox = font.getbbox(test)
-                            w = bbox[2] - bbox[0]
-                            if w > max_width and current:
-                                lines.append(current)
-                                current = word
-                            else:
-                                current = test
-                        if current:
-                            lines.append(current)
-                        return lines
-                    # Draw name (bold, wrap if needed)
-                    name_lines = wrap_text(name, font_small_bold, max_cred_width)
-                    for k, nline in enumerate(name_lines):
-                        nline_bbox = font_small_bold.getbbox(nline)
-                        nline_w = nline_bbox[2] - nline_bbox[0]
-                        draw.text((center_x - nline_w//2, cred_y + k * int(font_small_bold.size * 1.1)), nline, font=font_small_bold, fill="white")
-                    offset_y = cred_y + len(name_lines) * int(font_small_bold.size * 1.1)
-                    # Draw rest (wrap if needed)
-                    if rest:
-                        rest_lines = wrap_text(rest, font_small, max_cred_width)
-                        for k, rline in enumerate(rest_lines):
-                            rline_bbox = font_small.getbbox(rline)
-                            rline_w = rline_bbox[2] - rline_bbox[0]
-                            draw.text((center_x - rline_w//2, offset_y + k * int(font_small.size * 1.1)), rline, font=font_small, fill="white")
-                        cred_end_y = offset_y + len(rest_lines) * int(font_small.size * 1.1)
+                        # Create placeholder circle for missing speaker image
+                        placeholder = Image.new("RGB", (circle_size, circle_size), (100, 100, 100))
+                        placeholder_draw = ImageDraw.Draw(placeholder)
+                        # Draw text "Speaker image not found" wrapped on the circle
+                        placeholder_text = "Speaker\nimage\nnot found"
+                        lines = placeholder_text.split('\n')
+                        text_font = ImageFont.truetype(settings.FONT_REGULAR_PATH, max(16, circle_size // 20))
+                        total_height = len(lines) * text_font.size
+                        start_y = (circle_size - total_height) // 2
+                        for i, line in enumerate(lines):
+                            bbox = text_font.getbbox(line)
+                            text_width = bbox[2] - bbox[0]
+                            text_x = (circle_size - text_width) // 2
+                            placeholder_draw.text((text_x, start_y + i * text_font.size), line, font=text_font, fill="white")
+                        
+                        mask = Image.new("L", (circle_size, circle_size), 0)
+                        ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
+                        img.paste(placeholder, (x_positions[position_index], y), mask)
                     else:
-                        cred_end_y = offset_y
-                    # Track the lowest y position of credentials for all speakers
-                    if cred_end_y > max_cred_y:
-                        max_cred_y = cred_end_y
-                y += circle_size + int(font_small.size * 2.2)
+                        photo = self.imgsvc.open_image(photo_url)
+                        photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
+                        mask = Image.new("L", (circle_size, circle_size), 0)
+                        ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
+                        img.paste(photo, (x_positions[position_index], y), mask)
+                    
+                    # Speaker credentials (centered, name bold, wrap if too long)
+                    if cred.strip():  # Only draw credentials if they exist
+                        cred_y = y + circle_size + 10
+                        cred_parts = cred.split(",", 1)
+                        name = cred_parts[0].strip() if cred_parts else cred.strip()
+                        rest = cred_parts[1].strip() if len(cred_parts) > 1 else ""
+                        center_x = x_positions[position_index] + circle_size//2
+                        max_cred_width = min(int(circle_size * 2), content_width)
+                        
+                        def wrap_text(text, font, max_width):
+                            words = text.split()
+                            lines = []
+                            current = ""
+                            for word in words:
+                                test = current + (" " if current else "") + word
+                                bbox = font.getbbox(test)
+                                w = bbox[2] - bbox[0]
+                                if w > max_width and current:
+                                    lines.append(current)
+                                    current = word
+                                else:
+                                    current = test
+                            if current:
+                                lines.append(current)
+                            return lines
+                        
+                        # Draw name (bold, wrap if needed)
+                        name_lines = wrap_text(name, cred_font_bold, max_cred_width)
+                        for k, nline in enumerate(name_lines):
+                            nline_bbox = cred_font_bold.getbbox(nline)
+                            nline_w = nline_bbox[2] - nline_bbox[0]
+                            draw.text((center_x - nline_w//2, cred_y + k * int(cred_font_bold.size * 1.1)), nline, font=cred_font_bold, fill="white")
+                        offset_y = cred_y + len(name_lines) * int(cred_font_bold.size * 1.1)
+                        
+                        # Draw rest (wrap if needed)
+                        if rest:
+                            rest_lines = wrap_text(rest, cred_font, max_cred_width)
+                            for k, rline in enumerate(rest_lines):
+                                rline_bbox = cred_font.getbbox(rline)
+                                rline_w = rline_bbox[2] - rline_bbox[0]
+                                draw.text((center_x - rline_w//2, offset_y + k * int(cred_font.size * 1.1)), rline, font=cred_font, fill="white")
+                            cred_end_y = offset_y + len(rest_lines) * int(cred_font.size * 1.1)
+                        else:
+                            cred_end_y = offset_y
+                        
+                        # Track the lowest y position of credentials for all speakers
+                        if cred_end_y > max_cred_y:
+                            max_cred_y = cred_end_y
+                    
+                    position_index += 1
+                    speaker_index += 1
+                    
+                y += circle_size + int(cred_font.size * 2.2)
             speaker_grid_bottom = y
         else:
-            speaker_grid_bottom = y_cursor + 40
+            # No speakers case - add appropriate gap after summary
+            speaker_grid_bottom = y_cursor + 120  # Sufficient gap but not too much empty space
+            max_cred_y = y_cursor
         # Ensure event details start after the lowest speaker credential, with extra vertical gap
-        details_y = max(speaker_grid_bottom + 60, max_cred_y + 60)
+        details_y = max(speaker_grid_bottom + 50, max_cred_y + 50)
 
         # Event details (date, time, venue on separate lines, left aligned below speaker grid, with icons)
         # Fetch icons from WordPress
