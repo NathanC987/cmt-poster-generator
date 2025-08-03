@@ -131,7 +131,18 @@ class PosterGenerator:
                     return photo
             return None
 
-        speaker_photos = [await find_speaker_photo(name) for name in speaker_names]
+        # Create aligned speaker data: ensure each speaker has a photo (or None) and credentials in the same order
+        speaker_photos = []
+        credentials = []
+        
+        if speakers_text.strip():
+            credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
+            # Ensure we have the same number of photos as credentials
+            for i, name in enumerate(speaker_names):
+                photo = await find_speaker_photo(name)
+                speaker_photos.append(photo)
+        else:
+            credentials = []
         # 4. Text formatting
         # Normalize date to YYYY-MM-DD for OpenAI
         raw_date = payload.get("date", "")
@@ -143,10 +154,7 @@ class PosterGenerator:
         # Get event details from OpenAI (separator should be handled in the OpenAI prompt, not as an argument)
         event_details = await self.openai.format_event_details(norm_date, payload.get("time", ""), payload.get("venue", ""))
         summary = await self.openai.summarize_description(payload.get("description", ""))
-        if speakers_text.strip():
-            credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
-        else:
-            credentials = []
+        
         # 5. Compose poster
         poster_path = await self.compose_poster(
             title=payload.get("title", ""),
@@ -261,7 +269,7 @@ class PosterGenerator:
                         placeholder = Image.new("RGB", (circle_size, circle_size), (100, 100, 100))
                         placeholder_draw = ImageDraw.Draw(placeholder)
                         # Draw text "Speaker photo not found" wrapped on the circle
-                        placeholder_text = "Speaker\nphoto\nnot found"
+                        placeholder_text = "Speaker photo\nnot found"
                         lines = placeholder_text.split('\n')
                         text_font = ImageFont.truetype(settings.FONT_REGULAR_PATH, max(16, circle_size // 20))
                         total_height = len(lines) * text_font.size
