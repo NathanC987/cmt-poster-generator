@@ -33,7 +33,7 @@ Transforms structured event data (JSON) into professional, branded posters autom
 
 ```
 ┌─────────────────────┐    ┌──────────────────────┐    ┌─────────────────────┐
-│   Power Automate    │────│   FastAPI Service   │────│     WordPress       │
+│   Power Automate    │────│   FastAPI Service    │────│     WordPress       │
 │   (Event Trigger)   │    │  (Poster Generator)  │    │   (Media Storage)   │
 │                     │    │                      │    │                     │
 │ • Meeting Creation  │    │ • Content Processing │    │ • Image Library     │
@@ -125,7 +125,7 @@ app/
 ### Local Development Setup
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/cmt-poster-generator.git
+git clone https://github.com/cmt-poster-generator/cmt-poster-generator.git
 cd cmt-poster-generator
 
 # Create virtual environment
@@ -183,7 +183,7 @@ uvicorn app.main:app --reload
 ### Testing
 ```bash
 # Production testing
-curl -X POST "http://cmt-poster-generator.onrender.com/generate-posters" \
+curl -X POST "https://cmt-poster-generator.onrender.com/generate-posters" \
   -H "Content-Type: application/json" \
   --data-binary "@test_payload.json"
 ```
