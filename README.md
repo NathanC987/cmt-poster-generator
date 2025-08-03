@@ -22,10 +22,12 @@ Transforms structured event data (JSON) into professional, branded posters autom
 
 ### Key Features
 - **Automation**: Eliminates manual poster design work
-- **Consistency**: Maintains CMT branding across all events
+- **Consistency**: Maintains CMT branding across all events with standardized fonts and layouts
 - **Integration**: Works with Power Automate workflows
-- **Scalability**: Handles events with varying speaker counts
-- **Intelligence**: AI-powered text summarization and formatting
+- **Scalability**: Handles events with varying speaker counts (1-4 speakers)
+- **Intelligence**: AI-powered text summarization, speaker credential extraction, and venue processing
+- **Smart Photo Matching**: Advanced speaker photo search with multiple name variants and fallback placeholders
+- **Dynamic Layouts**: Responsive grid layouts with consistent 28px credential fonts across all speaker counts
 
 ## System Architecture
 
@@ -82,7 +84,10 @@ Transforms structured event data (JSON) into professional, branded posters autom
    - WordPress media search retrieves relevant images
 3. **Generation Stage**: 
    - Pillow library composes poster with dynamic layout
-   - Text wrapping and image positioning algorithms apply
+   - Smart speaker photo matching with multiple name variants
+   - Automatic placeholder generation for missing speaker photos
+   - Consistent credential positioning below each speaker circle
+   - Text wrapping algorithms with standardized 28px font sizing
 4. **Output Stage**: 
    - Generated poster uploads to WordPress
    - API returns poster URL to Power Automate
@@ -119,8 +124,9 @@ app/
 ### WordPress Media Requirements
 - **Landmark Images**: Named as "city-country" (e.g., "singapore-singapore")
 - **Overlay Image**: Named "overlay" for branding
-- **Speaker Photos**: Named exactly as speaker names
-- **Icons**: "date", "time", "venue", "register" icons
+- **Speaker Photos**: Named with multiple variant support (full name, first name, first+last, case-insensitive)
+- **Icons**: "date", "time", "venue", "register" icons for event details
+- **Automatic Fallbacks**: Gray placeholder circles generated for missing speaker photos
 
 ### Local Development Setup
 ```bash
@@ -165,9 +171,12 @@ uvicorn app.main:app --reload
   "time": "Event time (required)",
   "venue": "Event location (required)",
   "description": "Event description (required)",
-  "speakers": ["Speaker 1", "Speaker 2"] // optional
+  "speakers": ["Speaker 1", "Speaker 2"]
 }
 ```
+
+**Notes:**
+- `speakers` field is optional and supports both string and array formats
 
 **Response**:
 ```json
@@ -193,8 +202,10 @@ curl -X POST "https://cmt-poster-generator.onrender.com/generate-posters" \
 ### Common Issues
 1. **Poster Generation Fails**: Check environment variables and service connectivity
 2. **Rate Limiting**: Requests limited to 1/minute per IP
-3. **Missing Images**: Verify WordPress media library has required assets
-4. **Deployment Issues**: Check Render logs for build/startup errors
+3. **Missing Images**: Verify WordPress media library has required assets - system automatically generates placeholders for missing speaker photos
+4. **Speaker Photo Not Found**: System searches multiple name variants and creates gray placeholders with "Speaker photo not found" text
+5. **Credential Alignment**: All speaker credentials use consistent 28px font size for uniform appearance
+6. **Deployment Issues**: Check Render logs for build/startup errors
 
 ### Debug Steps
 ```bash

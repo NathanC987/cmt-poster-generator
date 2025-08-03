@@ -219,9 +219,6 @@ class PosterGenerator:
         draw = ImageDraw.Draw(img)
         font_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 80)
         font_regular = ImageFont.truetype(settings.FONT_REGULAR_PATH, 48)
-        font_small = ImageFont.truetype(settings.FONT_REGULAR_PATH, 32)  # Slightly smaller
-        font_small_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 32)  # Slightly smaller
-        # Even smaller fonts for 4 speakers to reduce clutter
         font_tiny = ImageFont.truetype(settings.FONT_REGULAR_PATH, 28)
         font_tiny_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 28)
         # Text wrapping utility
@@ -261,9 +258,9 @@ class PosterGenerator:
             y = y_cursor + 40
             max_cred_y = y_cursor
             
-            # Choose appropriate font size based on number of speakers
-            cred_font = font_tiny if n == 4 else font_small
-            cred_font_bold = font_tiny_bold if n == 4 else font_small_bold
+            # Use consistent font size for all speaker counts
+            cred_font = font_tiny
+            cred_font_bold = font_tiny_bold
             
             speaker_index = 0
             for row in range(rows):
