@@ -2,14 +2,31 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import os
 import logging
+import requests
 
 logger = logging.getLogger(__name__)
 
 class ImageService:
+    """
+    Service class for image processing operations using PIL.
+    
+    Provides methods for:
+    - Opening images from URLs or local paths
+    - Cropping images to specific aspect ratios
+    - Saving processed images
+    """
     def open_image(self, path_or_url):
+        """
+        Open an image from a URL or local file path.
+        
+        Args:
+            path_or_url (str): URL or local path to the image
+            
+        Returns:
+            PIL.Image: Opened image in RGBA format
+        """
         logger.info(f"Opening image: {path_or_url}")
         if path_or_url.startswith("http"):
-            import requests
             resp = requests.get(path_or_url)
             img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
         else:
@@ -18,6 +35,16 @@ class ImageService:
         return img
 
     def crop_to_aspect(self, img, target_size):
+        """
+        Crop an image to fill the target aspect ratio while maintaining quality.
+        
+        Args:
+            img (PIL.Image): Source image to crop
+            target_size (tuple): Target (width, height) dimensions
+            
+        Returns:
+            PIL.Image: Cropped and resized image
+        """
         logger.info(f"Cropping image to fill aspect ratio {target_size}")
         target_w, target_h = target_size
         src_w, src_h = img.size
@@ -37,5 +64,12 @@ class ImageService:
         return img
 
     def save_image(self, img, path):
+        """
+        Save an image to the specified path.
+        
+        Args:
+            img (PIL.Image): Image to save
+            path (str): File path where the image will be saved
+        """
         logger.info(f"Saving image to {path}")
         img.save(path, format="PNG")

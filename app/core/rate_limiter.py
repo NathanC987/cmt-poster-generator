@@ -4,8 +4,16 @@ import httpx
 import hashlib
 import time
 
-# Simple Upstash Redis rate limiter (per IP, per minute)
 async def rate_limiter(request: Request):
+    """
+    Simple Upstash Redis-based rate limiter (per IP, per minute).
+    
+    Args:
+        request (Request): FastAPI request object
+        
+    Raises:
+        HTTPException: If rate limit is exceeded (429 status)
+    """
     if settings.RATE_LIMITER != "upstash":
         return
     ip = request.client.host

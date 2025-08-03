@@ -1,18 +1,73 @@
 import os
+import re
+import math
+import logging
 import tempfile
+import dateutil.parser
 from app.services.openai_service import OpenAIService
 from app.services.wordpress_service import WordPressService
 from app.services.image_service import ImageService
 from app.core.config import settings
 from PIL import Image, ImageDraw, ImageFont
 
+logger = logging.getLogger(__name__)
+
+def wrap_text(text, font, max_width):
+    """Utility function to wrap text within a given width"""
+    words = text.split()
+    lines = []
+    current = ""
+    for word in words:
+        test = current + (" " if current else "") + word
+        bbox = font.getbbox(test)
+        w = bbox[2] - bbox[0]
+        if w > max_width and current:
+            lines.append(current)
+            current = word
+        else:
+            current = test
+    if current:
+        lines.append(current)
+    return lines
+
 class PosterGenerator:
+    """
+    Main class for generating CMT Association event posters.
+    
+    This class orchestrates the entire poster generation process including:
+    - Fetching and processing speaker information
+    - Retrieving landmark and overlay images from WordPress
+    - Formatting event details using OpenAI
+    - Composing the final poster with proper layout
+    - Uploading the finished poster to WordPress
+    """
+    
     def __init__(self, openai_service, wordpress_service, image_service):
+        """
+        Initialize the poster generator with required services.
+        
+        Args:
+            openai_service: Service for AI-powered text processing
+            wordpress_service: Service for WordPress media operations
+            image_service: Service for image processing operations
+        """
         self.openai = openai_service
         self.wp = wordpress_service
         self.imgsvc = image_service
 
     async def generate(self, payload):
+        """
+        Generate a poster from the provided event payload.
+        
+        Args:
+            payload (dict): Event data containing title, date, time, venue, speakers, description
+            
+        Returns:
+            list: List containing the URL of the generated poster
+            
+        Raises:
+            RuntimeError: If poster generation fails
+        """
         # 1. Get landmark slug
         venue = payload.get("venue", "")
         landmark_slug = await self.openai.get_landmark_slug(venue)
@@ -20,7 +75,6 @@ class PosterGenerator:
         landmark_url = await self.wp.search_media(landmark_slug)
         overlay_url = await self.wp.search_media("overlay")
         # 3. Speaker photos
-        import re
         speakers_data = payload.get("speakers", "")
         
         # Handle both string and list formats for speakers
@@ -46,7 +100,6 @@ class PosterGenerator:
 
         async def find_speaker_photo(name):
             # Try several variants for best match, including first name only, ignore case, and missing middle names
-            import re
             base = name.strip()
             # Remove extra spaces and punctuation
             base_clean = re.sub(r'[^a-zA-Z0-9 ]', '', base)
@@ -81,7 +134,6 @@ class PosterGenerator:
         speaker_photos = [await find_speaker_photo(name) for name in speaker_names]
         # 4. Text formatting
         # Normalize date to YYYY-MM-DD for OpenAI
-        import dateutil.parser
         raw_date = payload.get("date", "")
         try:
             parsed_date = dateutil.parser.parse(raw_date, dayfirst=False, yearfirst=False)
@@ -107,13 +159,27 @@ class PosterGenerator:
         )
         # 6. Upload poster
         if not poster_path:
-            import logging
-            logging.error("Poster generation failed: compose_poster returned None. Check for missing images or file save errors.")
+            logger.error("Poster generation failed: compose_poster returned None. Check for missing images or file save errors.")
             raise RuntimeError("Poster generation failed: compose_poster returned None. Check for missing images or file save errors.")
         poster_url = await self.wp.upload_media(poster_path, os.path.basename(poster_path))
         return [poster_url]
 
     async def compose_poster(self, title, summary, event_details, speaker_photos, credentials, landmark_url, overlay_url):
+        """
+        Compose the final poster image with all elements properly positioned.
+        
+        Args:
+            title (str): Event title
+            summary (str): Summarized event description
+            event_details (str): Formatted date, time, and venue information
+            speaker_photos (list): List of speaker photo URLs
+            credentials (list): List of speaker credentials
+            landmark_url (str): URL of the landmark background image
+            overlay_url (str): URL of the overlay image
+            
+        Returns:
+            str: Path to the generated poster file, or None if generation failed
+        """
         width, height = 1200, 1600
         # Margins
         margin_x = 80
@@ -132,8 +198,8 @@ class PosterGenerator:
         font_small = ImageFont.truetype(settings.FONT_REGULAR_PATH, 32)  # Slightly smaller
         font_small_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 32)  # Slightly smaller
         # Even smaller fonts for 4 speakers to reduce clutter
-        font_tiny = ImageFont.truetype(settings.FONT_REGULAR_PATH, 24)
-        font_tiny_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 24)
+        font_tiny = ImageFont.truetype(settings.FONT_REGULAR_PATH, 28)
+        font_tiny_bold = ImageFont.truetype(settings.FONT_BOLD_PATH, 28)
         # Text wrapping utility
         def draw_wrapped_text(draw, text, font, x, y, max_width, line_spacing=1.2, anchor="la"):
             words = text.split()
@@ -165,7 +231,6 @@ class PosterGenerator:
         speaker_grid_bottom = y_cursor
         max_cred_y = y_cursor
         if n:
-            import math
             max_per_row = 4
             rows = math.ceil(n / max_per_row)
             circle_size = 320 if n == 1 else 220 if n == 2 else 160
@@ -229,23 +294,6 @@ class PosterGenerator:
                         center_x = x_positions[position_index] + circle_size//2
                         max_cred_width = min(int(circle_size * 2), content_width)
                         
-                        def wrap_text(text, font, max_width):
-                            words = text.split()
-                            lines = []
-                            current = ""
-                            for word in words:
-                                test = current + (" " if current else "") + word
-                                bbox = font.getbbox(test)
-                                w = bbox[2] - bbox[0]
-                                if w > max_width and current:
-                                    lines.append(current)
-                                    current = word
-                                else:
-                                    current = test
-                            if current:
-                                lines.append(current)
-                            return lines
-                        
                         # Draw name (bold, wrap if needed)
                         name_lines = wrap_text(name, cred_font_bold, max_cred_width)
                         for k, nline in enumerate(name_lines):
@@ -297,10 +345,9 @@ class PosterGenerator:
         # Robustly extract date, time, venue from OpenAI output like:
         # 'Date: ..., Time: ..., Venue: ...'
         details_lines = []
-        import re as _re
         s = event_details.strip()
         # Try to match the pattern
-        m = _re.match(r"Date:\s*(.*?),\s*Time:\s*(.*?),\s*Venue:\s*(.*)", s)
+        m = re.match(r"Date:\s*(.*?),\s*Time:\s*(.*?),\s*Venue:\s*(.*)", s)
         if m:
             details_lines = [m.group(1).strip(), m.group(2).strip(), m.group(3).strip()]
         else:
@@ -332,22 +379,6 @@ class PosterGenerator:
             # For venue (last line), wrap text if too long
             if i == 2:
                 # Wrap venue text to fit within content_width
-                def wrap_text(text, font, max_width):
-                    words = text.split()
-                    lines = []
-                    current = ""
-                    for word in words:
-                        test = current + (" " if current else "") + word
-                        bbox = font.getbbox(test)
-                        w = bbox[2] - bbox[0]
-                        if w > max_width and current:
-                            lines.append(current)
-                            current = word
-                        else:
-                            current = test
-                    if current:
-                        lines.append(current)
-                    return lines
                 venue_lines = wrap_text(value, font_regular, content_width - (x - margin_x))
                 for j, vline in enumerate(venue_lines):
                     draw.text((x, y + j * int(font_regular.size * 1.2)), vline, font=font_regular, fill="white", anchor="la")
@@ -371,12 +402,11 @@ class PosterGenerator:
         else:
             draw.text((reg_x, reg_y), reg_text, font=font_regular, fill="white", anchor="ma")
         # Save
-        import logging
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                 img.save(tmp.name, format="PNG")
-                logging.info(f"Poster image saved to: {tmp.name}")
+                logger.info(f"Poster image saved to: {tmp.name}")
                 return tmp.name
         except Exception as e:
-            logging.error(f"Failed to save poster image: {e}")
+            logger.error(f"Failed to save poster image: {e}")
             return None
