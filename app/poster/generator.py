@@ -136,11 +136,27 @@ class PosterGenerator:
         credentials = []
         
         if speakers_text.strip():
-            credentials = (await self.openai.extract_speakers_and_credentials(speakers_text)).split("\n")
-            # Ensure we have the same number of photos as credentials
+            # Get full credentials from OpenAI and split into lines
+            full_credentials = await self.openai.extract_speakers_and_credentials(speakers_text)
+            credential_lines = full_credentials.split("\n")
+            
+            # Process each speaker name and find corresponding credentials
             for i, name in enumerate(speaker_names):
+                # Find speaker photo
                 photo = await find_speaker_photo(name)
                 speaker_photos.append(photo)
+                
+                # Find corresponding credential line for this speaker
+                # Look for the credential line that contains this speaker's name
+                matching_cred = ""
+                if i < len(credential_lines):
+                    # Use the credential line at the same index
+                    cred_line = credential_lines[i].strip()
+                    # Remove leading numbering if present
+                    cred_line = re.sub(r"^\s*\d+\s*[\.|\)]?\s*", "", cred_line)
+                    matching_cred = cred_line
+                
+                credentials.append(matching_cred)
         else:
             credentials = []
         # 4. Text formatting
