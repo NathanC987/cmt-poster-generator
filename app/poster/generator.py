@@ -241,51 +241,35 @@ class PosterGenerator:
             cred_font = font_tiny if n == 4 else font_small
             cred_font_bold = font_tiny_bold if n == 4 else font_small_bold
             
-            speaker_index = 0  # Track actual speakers with photos
+            # Process speakers with photos only, maintaining proper indexing
+            speakers_with_photos = []
+            for i, photo_url in enumerate(speaker_photos):
+                if photo_url:  # Only include speakers with photos
+                    cred = credentials[i] if i < len(credentials) else ""
+                    speakers_with_photos.append((photo_url, cred, i))
+            
+            speaker_index = 0
             for row in range(rows):
-                speakers_in_row = min(max_per_row, n - row * max_per_row)
+                speakers_in_row = min(max_per_row, len(speakers_with_photos) - row * max_per_row)
                 total_circles_width = speakers_in_row * circle_size
                 num_gaps = speakers_in_row + 1
                 gap = (width - total_circles_width) / num_gaps
                 x_positions = [round(gap + j * (circle_size + gap)) for j in range(speakers_in_row)]
                 
-                position_index = 0
-                for j in range(len(speaker_photos)):
-                    if position_index >= speakers_in_row:
-                        break
-                    if row * max_per_row + position_index >= n:
+                for position_index in range(speakers_in_row):
+                    if speaker_index >= len(speakers_with_photos):
                         break
                         
-                    photo_url = speaker_photos[j]
-                    cred = credentials[j] if j < len(credentials) else ""
+                    photo_url, cred, original_index = speakers_with_photos[speaker_index]
                     
-                    if not photo_url:
-                        # Create placeholder circle for missing speaker image
-                        placeholder = Image.new("RGB", (circle_size, circle_size), (100, 100, 100))
-                        placeholder_draw = ImageDraw.Draw(placeholder)
-                        # Draw text "Speaker image not found" wrapped on the circle
-                        placeholder_text = "Speaker\nimage\nnot found"
-                        lines = placeholder_text.split('\n')
-                        text_font = ImageFont.truetype(settings.FONT_REGULAR_PATH, max(16, circle_size // 20))
-                        total_height = len(lines) * text_font.size
-                        start_y = (circle_size - total_height) // 2
-                        for i, line in enumerate(lines):
-                            bbox = text_font.getbbox(line)
-                            text_width = bbox[2] - bbox[0]
-                            text_x = (circle_size - text_width) // 2
-                            placeholder_draw.text((text_x, start_y + i * text_font.size), line, font=text_font, fill="white")
-                        
-                        mask = Image.new("L", (circle_size, circle_size), 0)
-                        ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
-                        img.paste(placeholder, (x_positions[position_index], y), mask)
-                    else:
-                        photo = self.imgsvc.open_image(photo_url)
-                        photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
-                        mask = Image.new("L", (circle_size, circle_size), 0)
-                        ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
-                        img.paste(photo, (x_positions[position_index], y), mask)
+                    # Draw speaker photo
+                    photo = self.imgsvc.open_image(photo_url)
+                    photo = self.imgsvc.crop_to_aspect(photo, (circle_size, circle_size))
+                    mask = Image.new("L", (circle_size, circle_size), 0)
+                    ImageDraw.Draw(mask).ellipse((0,0,circle_size,circle_size), fill=255)
+                    img.paste(photo, (x_positions[position_index], y), mask)
                     
-                    # Speaker credentials (centered, name bold, wrap if too long)
+                    # Draw speaker credentials directly below this specific photo
                     if cred.strip():  # Only draw credentials if they exist
                         cred_y = y + circle_size + 10
                         cred_parts = cred.split(",", 1)
@@ -317,7 +301,6 @@ class PosterGenerator:
                         if cred_end_y > max_cred_y:
                             max_cred_y = cred_end_y
                     
-                    position_index += 1
                     speaker_index += 1
                     
                 y += circle_size + int(cred_font.size * 2.2)
